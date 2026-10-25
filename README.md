@@ -45,10 +45,6 @@ read from *your* disc 1 and run by a MIPS interpreter (`runtime/ac3_interp.c`).
 On a desktop PC it runs several times faster than the game needs. The build
 checks that no translated game function ended up in it.
 
-(`build.sh recomp` makes a faster variant from game code translated ahead of
-time by the native port's recompiler. That tool is not part of this
-repository, and such a build must never be published.)
-
 
 ## Credits
 
