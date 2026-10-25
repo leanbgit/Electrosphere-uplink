@@ -38,9 +38,6 @@ touch controls yet.
 **The game:** *Ace Combat 3: Electrosphere*, Japanese release, **Rev 1**,
 both discs.
 
-To put the website online (Cloudflare Pages, Netlify or GitHub Pages), see
-[`web/DEPLOY.md`](web/DEPLOY.md).
-
 ### No game code
 
 `ac3.wasm` contains no code from the game. When you press Play, `ACE3.BIN` is
