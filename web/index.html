@@ -5,220 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Electrosphere Uplink</title>
 <meta name="description" content="Play the Japanese release of Ace Combat 3: Electrosphere in your browser, from your own discs. A fan project.">
-<script>
-  // The game needs a cross-origin isolated page (SharedArrayBuffer). Hosts that
-  // cannot send the COOP/COEP headers get them from a tiny service worker.
-  if (!window.crossOriginIsolated && window.isSecureContext && 'serviceWorker' in navigator) {
-    navigator.serviceWorker.register('coi-sw.js').then(() => navigator.serviceWorker.ready).then(() => {
-      if (!sessionStorage.getItem('coi-reloaded')) { sessionStorage.setItem('coi-reloaded', '1'); location.reload(); }
-    }).catch(() => {});
-  }
-</script>
-<style>
-  @font-face { font-family: Barlow; src: url(fonts/Barlow-Regular.woff2) format('woff2'); font-weight: 400; font-display: swap; }
-  @font-face { font-family: Barlow; src: url(fonts/Barlow-Medium.woff2) format('woff2'); font-weight: 500; font-display: swap; }
-  @font-face { font-family: Barlow; src: url(fonts/Barlow-SemiBold.woff2) format('woff2'); font-weight: 600; font-display: swap; }
-  @font-face { font-family: 'Barlow Condensed'; src: url(fonts/BarlowCondensed-Medium.woff2) format('woff2'); font-weight: 500; font-display: swap; }
-  @font-face { font-family: 'Barlow Condensed'; src: url(fonts/BarlowCondensed-SemiBold.woff2) format('woff2'); font-weight: 600; font-display: swap; }
-
-  :root {
-    --haze: #D9E2EA;        /* page: overcast sky */
-    --haze-deep: #C7D3DE;   /* panels sunk into the page */
-    --cloud: #EEF2F5;       /* raised surfaces */
-    --ink: #13233A;         /* text */
-    --ink-soft: #4A5B70;    /* secondary text */
-    --rule: #A9B8C7;        /* hairlines */
-    --bezel: #05080C;       /* the instrument around the screen */
-    --bezel-mark: #3B4A5A;
-    --signal: #E4572E;      /* the one accent: play / live */
-    --signal-ink: #FFFFFF;
-    --done: #2F7D74;        /* checklist ticks */
-    --bad: #B3261E;
-    --font: Barlow, 'Segoe UI', system-ui, sans-serif;
-    --font-cond: 'Barlow Condensed', 'Arial Narrow', Barlow, sans-serif;
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --haze: #0F1A26; --haze-deep: #0A131C; --cloud: #172434; --ink: #DCE6F0; --ink-soft: #93A6BA;
-      --rule: #2B3B4D; --bezel: #000000; --bezel-mark: #465668; --signal: #F06A3F; --done: #5DB3A8; --bad: #F2867D;
-      color-scheme: dark;
-    }
-  }
-  :root[data-theme="dark"] {
-    --haze: #0F1A26; --haze-deep: #0A131C; --cloud: #172434; --ink: #DCE6F0; --ink-soft: #93A6BA;
-    --rule: #2B3B4D; --bezel: #000000; --bezel-mark: #465668; --signal: #F06A3F; --done: #5DB3A8; --bad: #F2867D;
-    color-scheme: dark;
-  }
-
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body { margin: 0; background: var(--haze); color: var(--ink); font: 400 16px/1.5 var(--font); }
-  a { color: inherit; text-underline-offset: 3px; }
-  :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
-  @media (max-width: 640px) { .wrap { padding: 0 16px; } }
-
-  /* ---- masthead: the wordmark is set, not drawn */
-  .masthead { padding: 28px 0 20px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 24px; }
-  .wordmark { margin: 0; font: 600 clamp(34px, 5.2vw, 56px)/0.95 var(--font-cond); letter-spacing: -0.01em; }
-  .wordmark span { display: block; font-weight: 500; color: var(--ink-soft); }
-  .tagline { margin: 0; max-width: 46ch; color: var(--ink-soft); font-size: 17px; }
-
-  /* ---- deck: screen + checklist */
-  .deck { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; padding-bottom: 32px; }
-  @media (max-width: 980px) { .deck { grid-template-columns: 1fr; } }
-
-  /* the bezel is the one bold element */
-  .bezel { position: relative; background: var(--bezel); border-radius: 14px; padding: 18px 18px 12px; }
-  .bezel::before, .bezel::after, .bezel .mk::before, .bezel .mk::after {
-    content: ''; position: absolute; width: 18px; height: 18px; border: 2px solid var(--bezel-mark); transition: border-color .4s;
-  }
-  .bezel::before { top: 7px; left: 7px; border-right: 0; border-bottom: 0; }
-  .bezel::after { top: 7px; right: 7px; border-left: 0; border-bottom: 0; }
-  .bezel .mk::before { bottom: 7px; left: 7px; border-right: 0; border-top: 0; }
-  .bezel .mk::after { bottom: 7px; right: 7px; border-left: 0; border-top: 0; }
-  body.live .bezel::before, body.live .bezel::after, body.live .bezel .mk::before, body.live .bezel .mk::after { border-color: var(--signal); }
-  @media (prefers-reduced-motion: reduce) { .bezel::before, .bezel::after, .bezel .mk::before, .bezel .mk::after { transition: none; } }
-
-  #screen-wrap { position: relative; aspect-ratio: 4 / 3; width: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 4px; }
-  #screen-wrap.wide { aspect-ratio: 16 / 9; }
-  #screen, #screen-hd { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
-  #screen-hd { image-rendering: auto; display: none; }
-  body.hd #screen-hd { display: block; } body.hd #screen { display: none; }
-  body.hd .sd-only { display: none; }
-  #screen.smooth { image-rendering: auto; }
-  #screen-wrap:fullscreen { border-radius: 0; }
-  .idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #8EA0B3; text-align: center; padding: 24px; }
-  body.live .idle { display: none; }
-  button.play { display: inline-flex; align-items: center; gap: 12px; background: var(--signal); color: var(--signal-ink);
-                font: 600 30px/1 var(--font-cond); letter-spacing: .04em; padding: 16px 40px 16px 30px; border-radius: 10px;
-                box-shadow: 0 0 0 0 rgba(0,0,0,0); transition: transform .12s ease-out, box-shadow .2s; }
-  button.play svg { width: 28px; height: 28px; fill: currentColor; }
-  button.play:not(:disabled):hover { transform: scale(1.04); box-shadow: 0 0 0 6px color-mix(in srgb, var(--signal) 25%, transparent); }
-  button.play:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-  button.play:disabled { opacity: .35; }
-  .idle-hint { margin: 10px 0 0; font-size: 15px; color: #8EA0B3; min-height: 1.4em; }
-  @media (prefers-reduced-motion: reduce) { button.play { transition: none; } }
-  .live-only { display: none; } body.live .live-only { display: inline-block; }
-  .screen-tools .status { margin: 0 0 0 auto; text-align: right; max-width: 48ch; }
-
-  /* ---- loading screen: a fighter seen from above that fills up, tail to nose */
-  .loader { position: absolute; inset: 0; z-index: 2; background: #000; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; gap: 2px; padding: 24px; text-align: center; }
-  .loader[hidden] { display: none; }
-  .loader svg { height: min(52%, 320px); width: auto; overflow: visible; }
-  .loader .hull { fill: #0B141D; stroke: #3B4A5A; stroke-width: 1.4; stroke-linejoin: round; }
-  .loader .hull-lit { fill: none; stroke: var(--signal); stroke-width: 1.4; stroke-linejoin: round; }
-  .loader .lines { fill: none; stroke: #000; stroke-opacity: .3; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
-  .loader { transition: opacity .45s ease-out; }
-  .loader.gone { opacity: 0; }
-  .loader .fill { fill: var(--signal); }
-  .loader .edge { fill: #FFE1CF; }
-  .loader .flame { fill: #FFB15C; transform-box: fill-box; transform-origin: 50% 0; animation: flame .09s steps(2) infinite alternate; }
-  .loader .flame.core { fill: #FFF1DA; }
-  @keyframes flame { from { transform: scaleY(1); opacity: .95; } to { transform: scaleY(.7); opacity: .7; } }
-  .loader .pct { font: 600 clamp(30px, 5vw, 46px)/1 var(--font-cond); color: #E6EDF3; font-variant-numeric: tabular-nums; margin-top: 10px; }
-  .loader .pct small { font-size: .55em; color: #8EA0B3; margin-left: 2px; }
-  .loader .stage { font: 500 14px/1.3 var(--font-cond); letter-spacing: .14em; text-transform: uppercase; color: #8EA0B3; max-width: 46ch; }
-  .loader .sub { font-size: 13px; color: #5E7184; margin-top: 4px; }
-  @media (prefers-reduced-motion: reduce) {
-    .loader { transition: none; }
-    .loader .flame { animation: none; }
-  }
-
-  .readouts { display: flex; flex-wrap: wrap; gap: 4px 28px; padding: 10px 4px 2px; color: #8EA0B3; font-size: 14px; }
-  .readouts b { color: #E6EDF3; font-weight: 500; font-variant-numeric: tabular-nums; }
-
-  .screen-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 12px 2px 0; }
-  .set-group + .set-group { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--rule); }
-  .set-group h4 { margin: 0 0 4px; font: 600 17px/1.2 var(--font-cond); }
-  .set-group select { font: inherit; font-size: 15px; margin-left: 6px; }
-  .set-group > .row { gap: 8px 18px; font-size: 15px; }
-  button.quiet.small { padding: 6px 12px; font-size: 14px; }
-  .gfx-more { margin: 8px 0 0; }
-  .gfx-more summary { cursor: pointer; font: 600 17px/1.2 var(--font-cond); }
-  .gfx-more .note { margin: 6px 0 8px; }
-  .gfx-grid { display: grid; grid-template-columns: 1fr; gap: 2px; margin-bottom: 10px; }
-  .gfx-grid .check { margin: 0; }
-  .gfx-grid label.check { flex-wrap: wrap; row-gap: 0; }
-  .gfx-grid .sub { color: var(--ink-soft); font-size: 13px; flex-basis: 100%; padding-left: 23px; margin-top: -2px; }
-  body.sd .gfx-more { opacity: .55; }
-
-  /* ---- checklist */
-  .checklist { background: var(--cloud); border-radius: 10px; padding: 22px 22px 18px; }
-  .checklist h2 { margin: 0 0 4px; font: 600 26px/1.1 var(--font-cond); }
-  .checklist > p { margin: 0 0 16px; color: var(--ink-soft); font-size: 15px; }
-  .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
-  .step { counter-increment: step; position: relative; padding: 0 0 18px 44px; }
-  .step + .step { border-top: 1px solid var(--rule); padding-top: 16px; }
-  .step::before {
-    content: counter(step); position: absolute; left: 0; width: 30px; height: 30px; border-radius: 50%;
-    border: 2px solid var(--ink); display: grid; place-items: center; font: 600 16px/1 var(--font-cond);
-  }
-  .step + .step::before { top: 16px; }
-  .step.done::before { content: '✓'; background: var(--done); border-color: var(--done); color: #fff; }
-  .step h3 { margin: 2px 0 6px; font: 600 20px/1.2 var(--font-cond); }
-  .step p { margin: 0 0 8px; font-size: 15px; color: var(--ink-soft); }
-
-  #drop { border: 2px dashed var(--rule); border-radius: 8px; padding: 14px; text-align: center; color: var(--ink-soft); font-size: 15px; }
-  #drop.over { border-color: var(--signal); color: var(--ink); }
-  #drop label.pickbtn { color: var(--ink); text-decoration: underline; cursor: pointer; }
-  #pick { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  .files { list-style: none; margin: 10px 0 0; padding: 0; font-size: 14px; }
-  .files li { padding: 2px 0 2px 18px; position: relative; }
-  .files li::before { content: ''; position: absolute; left: 2px; top: 9px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-soft); }
-  .files li.ok::before { background: var(--done); border-color: var(--done); }
-  .files li.dim { color: var(--ink-soft); }
-
-  label.check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; margin: 8px 0 0; cursor: pointer; }
-  label.check input { margin-top: 4px; accent-color: var(--done); }
-  .note { font-size: 14px; color: var(--ink-soft); margin: 4px 0 0; min-height: 1em; }
-
-  button { font: 600 16px/1 var(--font); border-radius: 6px; padding: 12px 18px; cursor: pointer; border: 2px solid transparent; }
-  button.primary { background: var(--signal); color: var(--signal-ink); font: 600 22px/1 var(--font-cond); padding: 12px 34px; }
-  button.quiet { background: transparent; color: var(--ink); border-color: var(--rule); padding: 9px 14px; font-size: 15px; }
-  .bezel button.quiet, .screen-tools button.quiet { color: var(--ink); }
-  button:disabled { opacity: .45; cursor: default; }
-  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  input[type=range] { accent-color: var(--signal); width: 120px; vertical-align: middle; }
-
-  /* ---- lower deck */
-  .lower { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 8px 0 28px; border-top: 1px solid var(--rule); }
-  @media (max-width: 980px) { .lower { grid-template-columns: 1fr; } }
-  .lower section { padding-top: 18px; }
-  .lower h2 { margin: 0 0 8px; font: 600 22px/1.2 var(--font-cond); }
-  .lower p { margin: 0 0 10px; font-size: 15px; color: var(--ink-soft); max-width: 60ch; }
-  /* ---- controls: keyboard bindings, changeable */
-  .controls { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--rule); }
-  .controls-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .controls h2 { margin: 0; font: 600 22px/1.2 var(--font-cond); }
-  .controls .note { margin: 4px 0 12px; max-width: 70ch; }
-  .keygrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0 28px; }
-  .keygroup h3 { margin: 10px 0 2px; font: 600 15px/1.2 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
-  .keyrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--rule); font-size: 15px; }
-  .keyrow span { color: var(--ink-soft); }
-  button.keycap { font: 500 14px/1 var(--font); min-width: 64px; padding: 6px 10px; border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px;
-                  background: var(--cloud); color: var(--ink); }
-  button.keycap:hover { border-color: var(--ink-soft); }
-  button.keycap.listening { border-color: var(--signal); color: var(--signal); }
-  button.keycap.flash { animation: keyflash .6s ease-out; }
-  @keyframes keyflash { from { background: var(--signal); color: var(--signal-ink); } }
-  @media (prefers-reduced-motion: reduce) { button.keycap.flash { animation: none; } }
-  table.keys { border-collapse: collapse; font-size: 15px; width: 100%; }
-  table.keys td { padding: 5px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  table.keys td:first-child { color: var(--ink-soft); width: 42%; padding-right: 12px; }
-  kbd { font: 500 14px/1 var(--font); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 2px 6px; background: var(--cloud); }
-
-  details.diag { border-top: 1px solid var(--rule); padding: 14px 0 6px; }
-  details.diag summary { cursor: pointer; font: 600 18px/1.2 var(--font-cond); }
-  #log { margin-top: 10px; height: 240px; overflow: auto; background: var(--haze-deep); border-radius: 6px; padding: 10px; font: 12px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; color: var(--ink-soft); }
-  #log .ok { color: var(--done); } #log .bad { color: var(--bad); } #log .dim { opacity: .75; }
-
-  footer { border-top: 1px solid var(--rule); padding: 18px 0 40px; font-size: 14px; color: var(--ink-soft); }
-  footer p { margin: 0 0 6px; max-width: 90ch; }
-  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-</style>
+<script src="coi-boot.js"></script>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap">
@@ -245,7 +33,7 @@
                 <clipPath id="jet-lit"><rect id="ld-litrect" x="0" y="330" width="200" height="0"/></clipPath>
               </defs>
               <g id="ld-flame">
-                <path class="flame" d="M 97 284 L 106 284 L 101.5 318 Z"/><path class="flame" d="M 94 284 L 103 284 L 98.5 318 Z" style="animation-delay:.045s"/>
+                <path class="flame" d="M 97 284 L 106 284 L 101.5 318 Z"/><path class="flame late" d="M 94 284 L 103 284 L 98.5 318 Z"/>
                 <path class="flame core" d="M 97 284 L 103 284 L 100 302 Z"/>
               </g>
               <use href="#jet" class="hull"/>
@@ -282,7 +70,7 @@
         <button class="quiet live-only" id="stop" disabled>Stop</button>
         <button class="quiet" id="fullscreen">Fullscreen</button>
         <label>Volume <input type="range" id="volume" min="0" max="100" value="80" aria-label="Volume"></label>
-        <label class="check sd-only" style="margin:0"><input type="checkbox" id="smooth"> Smooth scaling</label>
+        <label class="check flush sd-only"><input type="checkbox" id="smooth"> Smooth scaling</label>
         <p class="note status" id="status" role="status"></p>
       </div>
       <section class="controls" aria-labelledby="h-keys">
@@ -307,7 +95,7 @@
           <ul class="files" id="files"></ul>
           <label class="check"><input type="checkbox" id="remember" checked> Remember the discs in this browser (uses about 1.4 GB)</label>
           <p class="note" id="storeprog"></p>
-          <button class="quiet" id="forget" style="margin-top:6px;padding:6px 12px;font-size:14px">Forget remembered files</button>
+          <button class="quiet compact" id="forget">Forget remembered files</button>
           <p class="note" id="enhint"></p>
         </li>
         <li class="step" id="step-settings">
@@ -321,7 +109,7 @@
                 <option value="4">Enhanced 4×</option>
                 <option value="6">Enhanced 6×</option>
               </select></label>
-              <label class="check" style="margin:0"><input type="checkbox" id="widescreen" data-bit="1" checked> Widescreen</label>
+              <label class="check flush"><input type="checkbox" id="widescreen" data-bit="1" checked> Widescreen</label>
             </div>
             <p class="note" id="gfxhint"></p>
             <details class="gfx-more" id="gfx-more">
@@ -338,14 +126,14 @@
                 <label class="check"><input type="checkbox" data-bit="128" checked> Sky lighting</label>
                 <label class="check"><input type="checkbox" data-bit="8"> Animated ocean <span class="sub">(sun glints on the waves can flicker)</span></label>
               </div>
-              <button class="quiet" id="gfx-defaults" style="padding:6px 12px;font-size:14px">Defaults</button>
+              <button class="quiet compact" id="gfx-defaults">Defaults</button>
             </details>
           </div>
           <div class="set-group">
             <h4>Memory card</h4>
             <p id="saveinfo"></p>
             <p>Card 1 lives in this browser. Keep a copy, or bring a save from an emulator or a DexDrive (.mcd, .mcr or .gme).</p>
-            <div class="row"><button class="quiet small" id="export">Download card</button><button class="quiet small" id="importbtn">Load a card file</button><input type="file" id="import" accept=".mcd,.mcr,.gme" hidden></div>
+            <div class="row"><button class="quiet small" id="export">Download card</button><button class="quiet small" id="importbtn">Load a card file</button><button class="quiet small" id="restorecard" hidden>Restore previous card</button><input type="file" id="import" accept=".mcd,.mcr,.gme" hidden></div>
           </div>
         </li>
       </ol>

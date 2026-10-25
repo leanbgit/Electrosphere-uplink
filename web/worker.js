@@ -10,6 +10,7 @@
 //   pad   Int32Array(7): connected, analog, buttons, lx, ly, rx, ry
 //   ring  audio ring: Int32 header [read, write] + Int16 stereo samples
 'use strict';
+const DEV = true;    // site/ (build.sh): false (test-bench options ignored in the website)
 
 const RAW = 2352, USER_OFF = 24, USER = 2048;
 const EXE_SHA256 = '2c3f2ce41268176128973ea0cd9b28784a26c0061bff5550c99599388f13ebe9';
@@ -216,11 +217,18 @@ self.onmessage = async (e) => {
     if (hash !== EXE_SHA256)
       return fail('This disc is not the Japanese "Rev 1" release (SLPS-02020/02021). ' +
                   'Only that version is supported.');
+    // disc 2 carries the same executable: a different one means another release
+    if (discs[2]) {
+      const e2 = findRootFile(discs[2], 'ACE3.BIN');
+      if (!e2 || await sha256hex(readUser(discs[2], e2.lba, e2.size).slice()) !== EXE_SHA256)
+        return fail('Disc 2 is not the Japanese "Rev 1" release (SLPS-02021), or it was modified. ' +
+                    'Only that version is supported.');
+    }
     log(`disc 1 OK (ACE3.BIN ${ent.size} bytes, Rev 1)` + (discs[2] ? ', disc 2 OK' : ''));
 
     // 3. enhanced graphics: the page has started the render worker already
     if (m.hd) {
-      hdPort = m.hd.port; hdDone = new Int32Array(m.hd.done); hdSkip = m.hd.skip || 0;
+      hdPort = m.hd.port; hdDone = new Int32Array(m.hd.done); hdSkip = DEV && m.hd.skip || 0;
       if (m.hd.settings) hdSet = new Int32Array(m.hd.settings);
     }
 
@@ -239,10 +247,11 @@ self.onmessage = async (e) => {
       args.push('--scale', String(m.hd.scale), m.hd.wide ? '--widescreen' : '--no-widescreen');
     }
     // Development only (test bench): extra files copied into /rec and extra
-    // game arguments, e.g. an input recording for --play-input. The page never sends these.
-    const extraFiles = m.extraFiles || [];
-    if (m.noPace) self.AC3W.sleep = () => {};   // development: run as fast as possible
-    args.push(...(m.extraArgs || []));
+    // game arguments, e.g. an input recording for --play-input. The page never
+    // sends these, and the website's build ignores them.
+    const extraFiles = DEV && m.extraFiles || [];
+    if (DEV && m.noPace) self.AC3W.sleep = () => {};   // development: run as fast as possible
+    if (DEV) args.push(...(m.extraArgs || []));
 
     await createAC3({
       arguments: args,
@@ -265,7 +274,7 @@ self.onmessage = async (e) => {
         FS.writeFile('/game/ACE3.BIN', exe);
         if (extraFiles.length) {
           FS.mkdir('/rec');
-          for (const x of extraFiles) FS.writeFile('/rec/' + x.name, new Uint8Array(x.data));
+          for (const x of extraFiles) FS.writeFile('/rec/' + String(x.name).replace(/[\/\\]/g, '_'), new Uint8Array(x.data));
         }
         FS.mkdir('/saves');
         for (const c of m.cards) FS.writeFile(`/saves/card${c.slot + 1}.mcd`, new Uint8Array(c.data));

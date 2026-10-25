@@ -9,6 +9,7 @@
 //     the shared counter `done` (the game waits when it is 2 fields ahead),
 //   - GPU errors and a lost device are reported to the page.
 'use strict';
+const DEV = true;    // site/ (build.sh): false (test snapshots off in the website)
 
 let mod = null, dev = null, port = null, done = null, busy = false;
 const queue = [];                    // packets waiting (never dropped: they carry VRAM uploads)
@@ -22,7 +23,7 @@ onmessage = async (e) => {
   if (m.type === 'size') {
     const c = self.RW.ctx && self.RW.ctx.canvas;
     if (c && m.w >= 64 && m.h >= 48 && (c.width !== m.w || c.height !== m.h)) { c.width = m.w; c.height = m.h; }
-  } else if (m.type === 'shot') {
+  } else if (DEV && m.type === 'shot') {
     shots.push(m.id);
   } else if (m.type === 'init') {
     try {

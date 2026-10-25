@@ -1,5 +1,6 @@
 // app.js -- page side: file selection, display, input, audio, saves.
 'use strict';
+const DEV = true;    // site/ (build.sh): false (test hooks off in the website)
 // run state (declared first: the file panels read it while rendering)
 let running = false, worker = null, ctrl = null, audioCtx = null, audioNode = null;
 const $ = id => document.getElementById(id);
@@ -23,29 +24,92 @@ if (!self.crossOriginIsolated)
 //   stored    - remembered in this browser (disc images, in OPFS)
 //   bundled   - shipped with the site: Project NEMO's patches/CD1.xdelta, CD2.xdelta
 const RAW = 2352;
-const have = { disc: {}, patch: {}, cache: {} };     // [kind][1|2] = { file | url, src }
+const have = { disc: {}, patch: {} };                // [kind][1|2] = { file | url, src }
 let storing = 0;
 
-async function volumeId(file) {
-  const b = new Uint8Array(await file.slice(16 * RAW + 24 + 40, 16 * RAW + 24 + 72).arrayBuffer());
-  return String.fromCharCode(...b).trim();
+// Ace Combat 3 "Rev 1" (SLPS-02020/02021): both discs carry this ACE3.BIN.
+// Same value as web/worker.js, which checks again when the game starts.
+const EXE_SHA256 = '2c3f2ce41268176128973ea0cd9b28784a26c0061bff5550c99599388f13ebe9';
+const read = async (file, start, n) => new Uint8Array(await file.slice(start, start + n).arrayBuffer());
+const text = b => String.fromCharCode(...b).trim();
+
+// user data of raw MODE2/2352 sectors (the format the game needs)
+async function readUser(file, lba, nbytes) {
+  if (nbytes > 4 << 20) throw new Error('directory or file too large');
+  const out = new Uint8Array(Math.ceil(nbytes / 2048) * 2048);
+  for (let i = 0; i * 2048 < nbytes; i++) out.set(await read(file, (lba + i) * RAW + 24, 2048), i * 2048);
+  return out.subarray(0, nbytes);
 }
+async function volumeId(file) { return text(await read(file, 16 * RAW + 24 + 40, 32)); }
+// a 2048-byte-per-sector copy (.iso) loses the CD-XA audio and video the game streams
+async function isoVolumeId(file) {
+  const pvd = await read(file, 16 * 2048, 72);
+  return text(pvd.subarray(1, 6)) === 'CD001' ? text(pvd.subarray(40, 72)) : '';
+}
+// SHA-256 of ACE3.BIN in the root directory, or '' when the image has none
+async function exeHash(file) {
+  const pvd = await readUser(file, 16, 2048), pv = new DataView(pvd.buffer);
+  const dir = await readUser(file, pv.getUint32(158, true), pv.getUint32(166, true));
+  for (let off = 0; off < dir.length;) {
+    const len = dir[off];
+    if (len === 0) { off = (Math.floor(off / 2048) + 1) * 2048; continue; }
+    const name = text(dir.subarray(off + 33, off + 33 + dir[off + 32])).split(';')[0];
+    if (name.toUpperCase() === 'ACE3.BIN') {
+      const dv = new DataView(dir.buffer, dir.byteOffset + off);
+      const exe = await readUser(file, dv.getUint32(2, true), dv.getUint32(10, true));
+      return [...new Uint8Array(await crypto.subtle.digest('SHA-256', exe))].map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    off += len;
+  }
+  return '';
+}
+
+const NOT_RAW = 'The game needs a raw .bin image (2352-byte sectors, usually next to a .cue file): ' +
+                'its music and videos are stored in a way that .iso, .img, .chd and .pbp copies lose or compress.';
 
 async function classify(list) {
   for (const f of list) {
-    const n = f.name.toLowerCase();
+    const n = f.name.toLowerCase(), ext = n.includes('.') ? n.slice(n.lastIndexOf('.')) : '';
     if (n.endsWith('.en.cache')) {
-      have.cache[/disc\s*2/i.test(f.name) ? 2 : 1] = { file: f, src: 'selected' };
-    } else if (n.endsWith('.xdelta')) {
+      log(`${f.name}: not needed, the English data is built in this browser.`, 'dim');
+    } else if (ext === '.xdelta') {
       log(`${f.name}: not needed, the English translation is included with the site.`, 'dim');
-    } else if (n.endsWith('.bin') && f.size > 100e6) {
-      const v = await volumeId(f);
+    } else if (ext === '.cue' || ext === '.ccd' || ext === '.sub') {
+      log(`${f.name}: not needed, select the .bin file it belongs with.`, 'dim');
+    } else if (['.zip', '.7z', '.rar', '.gz', '.ecm'].includes(ext)) {
+      log(`${f.name}: compressed. Extract it first, then select the .bin file inside.`, 'bad');
+    } else if (['.iso', '.img', '.chd', '.pbp', '.mdf', '.nrg', '.cso'].includes(ext)) {
+      const v = f.size > 100e6 && (ext === '.iso' || ext === '.img') ? await isoVolumeId(f).catch(() => '') : '';
+      log(`${f.name}: ${/^ACE3ES[12]$/.test(v) ? 'this is Ace Combat 3, but as a 2048-byte copy. ' : 'not a supported disc image format. '}${NOT_RAW}`, 'bad');
+    } else if (ext === '.bin') {
+      if (f.size < 100e6) {
+        log(`${f.name}: too small for an Ace Combat 3 disc (${(f.size / 1048576).toFixed(0)} MB; each disc is about 690 MB). ` +
+            'If the game is split into several .bin files, the large one is the disc.', 'bad');
+        continue;
+      }
+      const v = await volumeId(f).catch(() => '');
       const d = v === 'ACE3ES1' ? 1 : v === 'ACE3ES2' ? 2 : 0;
-      if (!d) { log(`${f.name}: not an Ace Combat 3 disc image (volume "${v}")`, 'bad'); continue; }
+      if (!d) {
+        const iv = await isoVolumeId(f).catch(() => '');
+        if (/^ACE3ES[12]$/.test(iv)) log(`${f.name}: this is Ace Combat 3, but as a 2048-byte copy. ${NOT_RAW}`, 'bad');
+        else log(`${f.name}: not an Ace Combat 3 disc image (volume "${v.replace(/[^\x20-\x7e]/g, '?')}")`, 'bad');
+        continue;
+      }
+      // the version check, before anything is kept: only "Rev 1" works
+      let hash = '';
+      try { hash = await exeHash(f); } catch { /* unreadable directory: hash stays '' */ }
+      if (hash !== EXE_SHA256) {
+        log(`${f.name}: Ace Combat 3 disc ${d}, but ${hash ? 'not the Japanese "Rev 1" release (SLPS-02020/02021), or a modified copy' : 'its files could not be read (damaged or modified image)'}. ` +
+            'Only the unmodified Rev 1 discs are supported.', 'bad');
+        continue;
+      }
       have.disc[d] = { file: f, src: 'selected' };
+      log(`${f.name}: disc ${d} (Rev 1)`, 'ok');
       if ($('remember').checked) storeDisc(d, f);    // runs in the background
+    } else if (f.size === 0 && !f.type) {
+      log(`${f.name}: a folder or an empty file. Select the .bin files themselves.`, 'dim');
     } else {
-      log(`ignored ${f.name}`, 'dim');
+      log(`ignored ${f.name}: not a disc image (.bin)`, 'dim');
     }
   }
   renderFiles();
@@ -121,7 +185,7 @@ async function forgetAll() {
     localStorage.removeItem(discMark(d));
     if (dir) await dir.removeEntry(`disc${d}.bin`).catch(() => {});
     await idbDel('patches', d); await idbDel('encache', d);
-    for (const k of ['disc', 'patch', 'cache']) if (have[k][d] && have[k][d].src === 'stored') delete have[k][d];
+    for (const k of ['disc', 'patch']) if (have[k][d] && have[k][d].src === 'stored') delete have[k][d];
   }
   log('Remembered disc images and English data removed from this browser (saves kept).', 'ok');
   await loadRemembered();
@@ -130,13 +194,12 @@ async function forgetAll() {
 
 const SRC = { selected: 'selected', stored: 'remembered in this browser', bundled: 'included with the site' };
 function renderFiles() {
-  const ul = $('files'); ul.innerHTML = '';
+  const ul = $('files'); ul.replaceChildren();
   const add = (t, cls) => { const li = document.createElement('li'); li.textContent = t; li.className = cls; ul.appendChild(li); };
   for (const d of [1, 2]) {
     const x = have.disc[d];
     add(x ? `Disc ${d}: ${SRC[x.src]} (${(x.file.size / 1048576).toFixed(0)} MB)` : `Disc ${d}: not selected`, x ? 'ok' : 'dim');
   }
-  for (const d of [1, 2]) if (have.cache[d]) add(`English data disc ${d}: ${SRC[have.cache[d].src]}`, 'ok');
   $('start').disabled = !have.disc[1] || running;
   // always English (Project NEMO's patches ship with the site); a copy of the
   // site without them can only run the original Japanese text
@@ -173,9 +236,9 @@ async function cardGet(slot) {
   const d = await db();
   return new Promise(res => { const r = d.transaction(STORE).objectStore(STORE).get(slot); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); });
 }
-async function cardPut(slot, data) {
+async function cardPut(slot, data, time = Date.now()) {
   const d = await db();
-  return new Promise(res => { const t = d.transaction(STORE, 'readwrite'); t.objectStore(STORE).put({ data, time: Date.now() }, slot); t.oncomplete = res; });
+  return new Promise(res => { const t = d.transaction(STORE, 'readwrite'); t.objectStore(STORE).put({ data, time }, slot); t.oncomplete = res; t.onerror = res; });
 }
 async function idbGet(store, key) {
   const d = await db();
@@ -190,8 +253,9 @@ async function idbDel(store, key) {
   return new Promise(res => { const t = d.transaction(store, 'readwrite'); t.objectStore(store).delete(key); t.oncomplete = res; t.onerror = res; });
 }
 async function showSaveInfo() {
-  const c = await cardGet(0);
+  const c = await cardGet(0), b = await cardGet(1);
   $('saveinfo').textContent = c ? `Last saved ${new Date(c.time).toLocaleString()}.` : 'No save in this browser yet. The game creates one the first time it saves.';
+  $('restorecard').hidden = !b;
 }
 showSaveInfo();
 renderFiles();
@@ -202,7 +266,16 @@ $('export').onclick = async () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([c.data])); a.download = 'card1.mcd'; a.click();
 };
-$('importbtn').onclick = () => $('import').click();
+$('importbtn').onclick = () => { if (!running) $('import').click(); };
+$('restorecard').onclick = async () => {
+  const b = await cardGet(1); if (!b || running) return;
+  if (!confirm(`Bring back the save from ${new Date(b.time).toLocaleString()}? The current save becomes the backup.`)) return;
+  const c = await cardGet(0);
+  await cardPut(0, b.data, b.time);
+  if (c) await cardPut(1, c.data, c.time);
+  showSaveInfo();
+  log('Previous memory card restored. It is used the next time you press Play.', 'ok');
+};
 $('import').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   let data = new Uint8Array(await f.arrayBuffer());
@@ -211,6 +284,12 @@ $('import').onchange = async e => {
   if (data.length === 3904 + 131072 && sig === '123-456-STD') data = data.slice(3904);
   if (data.length !== 131072 || data[0] !== 0x4D || data[1] !== 0x43)   // "MC"
     return log(`${f.name}: not a memory card image (.mcd/.mcr 128 KB raw, or DexDrive .gme)`, 'bad');
+  const old = await cardGet(0);
+  if (old) {
+    if (!confirm(`Replace your current save (last saved ${new Date(old.time).toLocaleString()}) with ${f.name}?\n\n` +
+                 'Your current save is kept as a backup: "Restore previous card" brings it back.')) return;
+    await cardPut(1, old.data, old.time);                // backup slot (not used by the game)
+  }
   await cardPut(0, data); showSaveInfo();
   log(`Loaded ${f.name} as memory card 1. It is used the next time the game starts.`, 'ok');
   $('saveinfo').textContent = `Loaded ${f.name}. It is used the next time you press Play.`;
@@ -314,9 +393,13 @@ const KEY_ACTIONS = [
 ];
 const KEY_DEFAULTS = Object.fromEntries(KEY_ACTIONS.flatMap(([, a]) => a.map(([id, , code]) => [id, code])));
 let keyBind = { ...KEY_DEFAULTS };                       // action -> code
-try { Object.assign(keyBind, JSON.parse(localStorage.getItem('ac3.keys')) || {}); } catch {}
-let KEYS = {};                                           // code -> action
-function rebuildKeys() { KEYS = {}; for (const [a, c] of Object.entries(keyBind)) if (c) KEYS[c] = a; }
+try {                                                    // only known actions, string codes
+  const saved = JSON.parse(localStorage.getItem('ac3.keys')) || {};
+  for (const id of Object.keys(KEY_DEFAULTS))
+    if (Object.prototype.hasOwnProperty.call(saved, id) && typeof saved[id] === 'string' && saved[id].length < 40) keyBind[id] = saved[id];
+} catch {}
+let KEYS = Object.create(null);                          // code -> action
+function rebuildKeys() { KEYS = Object.create(null); for (const [a, c] of Object.entries(keyBind)) if (c) KEYS[c] = a; }
 rebuildKeys();
 function keyName(code) {
   if (!code) return '—';
@@ -332,17 +415,18 @@ function keyName(code) {
 }
 let listening = null;                                    // the action waiting for a new key
 function renderKeys(flash) {
-  const g = $('keygrid'); g.innerHTML = '';
+  const g = $('keygrid'); g.replaceChildren();
   for (const [title, acts] of KEY_ACTIONS) {
     const box = document.createElement('div'); box.className = 'keygroup';
-    box.innerHTML = `<h3>${title}</h3>`;
+    const h3 = document.createElement('h3'); h3.textContent = title; box.appendChild(h3);
     for (const [id, label] of acts) {
       const row = document.createElement('div'); row.className = 'keyrow';
       const b = document.createElement('button'); b.className = 'keycap' + (listening === id ? ' listening' : '') + (flash && flash.includes(id) ? ' flash' : '');
       b.textContent = listening === id ? 'press a key…' : keyName(keyBind[id]);
       b.setAttribute('aria-label', `${title} ${label}: ${keyName(keyBind[id])}. Click to change.`);
       b.onclick = () => { listening = listening === id ? null : id; renderKeys(); };
-      row.innerHTML = `<span>${label}</span>`; row.appendChild(b); box.appendChild(row);
+      const sp = document.createElement('span'); sp.textContent = label;
+      row.append(sp, b); box.appendChild(row);
     }
     g.appendChild(box);
   }
@@ -516,9 +600,8 @@ $('start').onclick = async () => {
     try { patches.push({ disc: d, file: x.file || await (await fetch(x.url)).blob() }); }
     catch (e) { log(`could not load the bundled NEMO patch CD${d}: ${e}`, 'bad'); }
   }
-  const caches = [1, 2].filter(d => have.cache[d]).map(d => ({ disc: d, file: have.cache[d].file }));
+  const caches = [];
   if (english) for (const n of [1, 2]) {
-    if (caches.some(c => c.disc === n)) continue;
     const c = await idbGet('encache', n);
     if (c) { caches.push({ disc: n, file: new Blob([c.data]) }); log(`using English data for disc ${n} stored in this browser`); }
     else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); if (have.disc[n]) buildingEnglish.push(n); }
@@ -575,14 +658,14 @@ async function startRenderer() {
     const m = e.data;
     if (m.type === 'log') log(m.text);
     else if (m.type === 'lost') { log(m.text, 'bad'); $('status').textContent = m.text + ' Press Stop, then Play to continue from your last save.'; }
-    else if (m.type === 'shot' && self.onShot) self.onShot(m);   // used by tests
+    else if (DEV && m.type === 'shot' && self.onShot) self.onShot(m);   // used by tests
   };
   $('ro-gfx').dataset.scale = result.scale;
   $('ro-gfx').textContent = `enhanced ${result.scale}×${wide ? ', 16:9' : ''}`;
   hdSet = new Int32Array(new SharedArrayBuffer(8));
   hdSet[0] = gfxBits(); hdSet[1] = 1;
   if (result.scale !== want) log(`enhanced graphics: ${want}× is too large for this GPU, using ${result.scale}×`);
-  return { scale: result.scale, wide, settings: hdSet.buffer, port: chan.port1, done, skip: self.hdSkip || 0 };
+  return { scale: result.scale, wide, settings: hdSet.buffer, port: chan.port1, done, skip: DEV && self.hdSkip || 0 };
 }
 function hdOff(text) {
   document.body.classList.remove('hd'); $('screen-wrap').classList.remove('wide');
