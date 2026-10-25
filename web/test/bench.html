@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Renderer Benchmark</title>
+<!-- Development tool (step 6.7), not part of the site. Replays an input
+     recording made with record_mission.bat as fast as the PC allows, with the
+     enhanced renderer at several settings, and reports the speed. It uses the
+     discs and English data the main page remembered in this browser, so open
+     it from the same address as the game (e.g. http://localhost:8080/bench.html). -->
+<style>
+  :root { color-scheme: dark; --bg: #0e1418; --panel: #162026; --line: #2a3a44; --text: #d8e4ea; --dim: #8aa0ac;
+          --ok: #6fd39a; --warn: #f0c060; --bad: #f07a6a; --accent: #7fc8e8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 0 0 10px; }
+  p { margin: 0 0 10px; } .dim { color: var(--dim); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px; }
+  label { display: inline-flex; gap: 6px; align-items: center; margin: 2px 14px 2px 0; }
+  input[type=number] { width: 90px; } input, select, button { font: inherit; }
+  button { background: #24516a; color: #fff; border: 0; border-radius: 6px; padding: 8px 16px; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; } button.sec { background: #2a3a44; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; font-size: 13px; }
+  td.n { text-align: right; } th.n { text-align: right; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  #log { max-height: 220px; overflow: auto; font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; color: var(--dim); }
+  #view { width: 100%; max-width: 640px; aspect-ratio: 16/9; background: #000; display: block; border-radius: 4px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 0; align-items: center; }
+  .passes label { display: flex; margin: 4px 0; }
+  .wrap { overflow-x: auto; }
+</style>
+<main>
+  <h1>Renderer benchmark</h1>
+  <p class="dim">Replays one of your recordings at full speed with the enhanced renderer and measures how many fields per second
+    your PC manages. The game runs at 60 fields per second, so anything above 60 holds full speed. Sound is off; nothing is saved.</p>
+
+  <section>
+    <h2>1. Files</h2>
+    <p id="discs" class="dim">Checking for remembered discs…</p>
+    <p class="row"><label>Discs (only if not remembered): <input type="file" id="pick-discs" multiple accept=".bin"></label></p>
+    <p class="row"><label>Recording: <input type="file" id="pick-rec" multiple></label></p>
+    <p class="dim">Select the <code>.ac3i</code> file from your recordings folder (<code>rec\</code> in the native build) together with its
+      <code>.card1.mcd</code> and <code>.card2.mcd</code> files (hold Ctrl to select all three).</p>
+    <p id="recinfo" class="dim"></p>
+  </section>
+
+  <section>
+    <h2>2. What to measure</h2>
+    <p class="row">
+      <label>From field <input type="number" id="from" value="0" min="0"></label>
+      <label>to field <input type="number" id="to" value="0" min="0"></label>
+      <span class="dim">(0 = until the recording ends; fields before "from" are run without drawing, which is quick)</span>
+    </p>
+    <p class="row">
+      <label>Picture size <select id="size">
+        <option value="1280x720">1280 × 720</option><option value="1920x1080" selected>1920 × 1080</option>
+        <option value="2560x1440">2560 × 1440</option><option value="3840x2160">3840 × 2160</option></select></label>
+      <label>Scale for the effect tests <select id="tscale"><option>2</option><option>3</option><option selected>4</option><option>6</option></select></label>
+    </p>
+    <div class="passes" id="passes"></div>
+    <p class="row" style="margin-top:12px"><button id="go">Run</button>&nbsp;<button id="stop" class="sec" disabled>Stop</button>
+      &nbsp;<button id="copy" class="sec" disabled>Copy results</button>&nbsp;<span id="status" class="dim"></span></p>
+  </section>
+
+  <section>
+    <h2>3. Results</h2>
+    <div class="wrap"><table id="results"><thead><tr>
+      <th>Pass</th><th class="n">Fields</th><th class="n">Fields/s</th><th class="n">Slower than 60</th>
+      <th class="n">99th pct</th><th class="n">Worst</th><th>Problems</th></tr></thead><tbody></tbody></table></div>
+    <p class="dim" style="margin-top:8px">Fields/s: average speed. Slower than 60: share of fields that took longer than 1/60 s
+      (a few during loading are normal). 99th pct and worst: time per field in milliseconds.</p>
+  </section>
+
+  <section>
+    <h2>Picture</h2>
+    <canvas id="view"></canvas>
+    <div id="log" style="margin-top:12px"></div>
+  </section>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const log = t => { const l = $('log'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; };
+
+// effect bits: same as web/app.js and platform/web/web_platform.c
+const B = { wide: 1, fx: 2, far: 4, ocean: 8, clouds: 16, forest: 32, atmo: 64, gi: 128, sun: 256, fog: 512 };
+const DEFAULT = 1 | 2 | 4 | 16 | 32 | 64 | 128 | 256 | 512;
+const PASSES = [
+  { id: 'cpu', name: 'Game only, nothing drawn (CPU limit)', scale: 2, bits: DEFAULT, cpu: true, on: true },
+  { id: 's2', name: 'Enhanced 2×, default effects', scale: 2, bits: DEFAULT, on: true },
+  { id: 's4', name: 'Enhanced 4×, default effects', scale: 4, bits: DEFAULT, on: true },
+  { id: 's6', name: 'Enhanced 6×, default effects', scale: 6, bits: DEFAULT, on: true },
+  { id: 'nofx', name: 'Test scale, world effects off', scale: 0, bits: DEFAULT & ~B.fx, on: true },
+  { id: 'ocean', name: 'Test scale, default + animated ocean', scale: 0, bits: DEFAULT | B.ocean, on: true },
+  { id: 'nofog', name: 'Test scale, original fog off (full map)', scale: 0, bits: DEFAULT & ~B.fog, on: true },
+  { id: 'live', name: 'Test scale, switching settings while playing (every 60 fields)', scale: 0, bits: DEFAULT, live: true, on: true },
+];
+const LIVE_STEPS = [DEFAULT, DEFAULT & ~B.fx, DEFAULT & ~B.far, DEFAULT & ~B.clouds, DEFAULT & ~B.forest, DEFAULT | B.ocean,
+  DEFAULT & ~B.atmo, DEFAULT & ~B.sun, DEFAULT & ~B.gi, DEFAULT & ~B.fog, DEFAULT & ~B.wide, DEFAULT];
+for (const p of PASSES) {
+  const l = document.createElement('label');
+  l.innerHTML = `<input type="checkbox" ${p.on ? 'checked' : ''} data-id="${p.id}"> ${p.name}`;
+  $('passes').appendChild(l);
+}
+
+// ---------------------------------------------------------------- files
+const have = { discs: [], patches: [], caches: [], rec: null, recFiles: [] };
+function db() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('ac3online', 3);
+    r.onupgradeneeded = () => { for (const n of ['cards', 'encache', 'patches']) if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function idb(store, key, value) {
+  const d = await db();
+  return new Promise(res => {
+    const t = d.transaction(store, value === undefined ? 'readonly' : 'readwrite'), s = t.objectStore(store);
+    if (value === undefined) { const r = s.get(key); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); }
+    else { s.put(value, key); t.oncomplete = res; t.onerror = res; }
+  });
+}
+async function loadRemembered() {
+  try {
+    const dir = await navigator.storage.getDirectory();
+    for (const d of [1, 2]) {
+      const mark = localStorage.getItem(`ac3.disc${d}`);
+      if (!mark) continue;
+      const f = await (await dir.getFileHandle(`disc${d}.bin`)).getFile();
+      if (String(f.size) === mark) have.discs[d] = f;
+    }
+  } catch { /* none */ }
+  for (const d of [1, 2]) {
+    const r = await fetch(`patches/CD${d}.xdelta`).catch(() => null);
+    if (r && r.ok) have.patches.push({ disc: d, file: await r.blob() });
+    const c = await idb('encache', d);
+    if (c) have.caches.push({ disc: d, file: new Blob([c.data]) });
+  }
+  showFiles();
+}
+function showFiles() {
+  const n = [1, 2].filter(d => have.discs[d]).length;
+  const src = discsPicked ? 'selected' : 'remembered in this browser';
+  $('discs').textContent = (n === 2 ? `Both discs found (${src}).` : n ? `Disc 1 found (${src}); disc 2 missing.` :
+    'No remembered discs: open this page from the same address as the game after playing once, or select the discs below.') +
+    (have.patches.length === 2 ? ' English patches found.' : ' English patches missing (patches/ folder).') +
+    (have.caches.length === 2 ? ' English data found.' : ' English data will be built first (about a minute).');
+  $('discs').className = n && have.patches.length === 2 ? 'ok' : 'warn';
+  $('go').disabled = !have.discs[1] || !have.rec || running;
+}
+let discsPicked = false;
+$('pick-discs').onchange = e => {
+  const fs = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name));   // "(Disc 1)" before "(Disc 2)"
+  have.discs = []; fs.forEach((f, i) => have.discs[i + 1] = f); discsPicked = fs.length > 0; showFiles();
+};
+$('pick-rec').onchange = e => {
+  const fs = [...e.target.files];
+  const rec = fs.find(f => f.name.endsWith('.ac3i'));
+  have.rec = rec || null; have.recFiles = fs;
+  const cards = rec ? fs.filter(f => f.name.startsWith(rec.name + '.card')) : [];
+  $('recinfo').textContent = rec ? `${rec.name}: ${(rec.size / 1024).toFixed(0)} KB, ${cards.length} card snapshot(s)` +
+    (cards.length < 2 ? ' — select the .card1.mcd and .card2.mcd files too, or the replay may go out of step.' : '') : 'No .ac3i file selected.';
+  $('recinfo').className = rec && cards.length >= 2 ? 'ok' : 'warn';
+  showFiles();
+};
+loadRemembered();
+
+// ---------------------------------------------------------------- a pass
+let running = false, stopAll = false, current = null;
+function runPass(p, from, to, size) {
+  return new Promise(async resolve => {
+    const [W, H] = size.split('x').map(Number);
+    const old = $('view'), cv = document.createElement('canvas');
+    cv.id = 'view'; cv.width = W; cv.height = H; old.replaceWith(cv);
+    const off = cv.transferControlToOffscreen(), chan = new MessageChannel(), doneSab = new SharedArrayBuffer(4);
+    const problems = [];
+    const rw = new Worker('render-worker.js');
+    const ready = await new Promise(res => {
+      const t = setTimeout(() => res({ type: 'failed', text: 'renderer did not start in 15 s' }), 15000);
+      rw.onmessage = e => {
+        const m = e.data;
+        if (m.type === 'ready' || m.type === 'failed') { clearTimeout(t); res(m); }
+        else if (m.type === 'lost') problems.push('GPU device lost: ' + m.text);
+        else if (m.type === 'log') { log('renderer: ' + m.text); if (/error|lost|invalid/i.test(m.text)) problems.push(m.text.slice(0, 120)); }
+      };
+      rw.postMessage({ type: 'init', canvas: off, port: chan.port2, done: doneSab, scale: p.scale }, [off, chan.port2]);
+    });
+    if (ready.type !== 'ready') { rw.terminate(); return resolve({ p, error: 'renderer failed: ' + ready.text }); }
+    const scale = ready.scale;
+
+    const ctrl = new Int32Array(new SharedArrayBuffer(16)), pad = new Int32Array(new SharedArrayBuffer(28));
+    pad.set([1, 0, 0, 128, 128, 128, 128]);
+    const hdSet = new Int32Array(new SharedArrayBuffer(8));
+    hdSet[0] = p.bits; hdSet[1] = 1;
+    const extraFiles = [];
+    for (const f of have.recFiles) extraFiles.push({ name: f.name, data: await f.arrayBuffer() });
+    const card1 = have.recFiles.find(f => f.name === have.rec.name + '.card1.mcd');
+    const w = new Worker('worker.js');
+    current = { w, rw, ctrl };
+    const times = [];
+    let seq = 0, finished = false, liveStep = 0;
+    const finish = reason => {
+      if (finished) return; finished = true;
+      Atomics.store(ctrl, 0, 1);
+      setTimeout(() => { w.terminate(); rw.terminate(); }, 300);
+      const blank = document.createElement('canvas'); blank.id = 'view'; $('view').replaceWith(blank);
+      const iv = [];
+      for (let i = 1; i < times.length; i++) iv.push(times[i] - times[i - 1]);
+      iv.sort((a, b) => a - b);
+      const total = times.length > 1 ? (times[times.length - 1] - times[0]) / 1000 : 0;
+      resolve({ p, scale, fields: iv.length, fps: total ? iv.length / total : 0,
+                slow: iv.length ? iv.filter(x => x > 1000 / 60 + 0.5).length / iv.length : 0,
+                p99: iv.length ? iv[Math.min(iv.length - 1, Math.floor(iv.length * 0.99))] : 0,
+                worst: iv.length ? iv[iv.length - 1] : 0, problems, reason });
+    };
+    w.onmessage = async e => {
+      const m = e.data;
+      if (m.type === 'frame') {
+        seq = m.seq || seq + 1;
+        if (seq > from) times.push(performance.now());
+        if (p.live && seq > from && (seq - from) % 60 === 0) {
+          liveStep = (liveStep + 1) % LIVE_STEPS.length;
+          Atomics.store(hdSet, 0, LIVE_STEPS[liveStep]); Atomics.add(hdSet, 1, 1);
+        }
+        if (seq % 120 === 0) $('status').textContent = `${p.name}: field ${seq}`;
+        if ((to && seq >= to) || stopAll) finish(stopAll ? 'stopped' : 'done');
+      } else if (m.type === 'log') {
+        if (/out of step|desync|RETRY|bad memory|unknown/i.test(m.text)) problems.push(m.text.slice(0, 120));
+        log(m.text);
+      } else if (m.type === 'error') { problems.push('game error: ' + m.text.split('\n')[0]); finish('error'); }
+      else if (m.type === 'hd-off') problems.push('enhanced graphics turned off: ' + m.text);
+      else if (m.type === 'encache') {
+        await idb('encache', m.disc, { data: new Uint8Array(m.data), time: Date.now() });
+        have.caches.push({ disc: m.disc, file: new Blob([m.data]) });
+        log(`English data for disc ${m.disc} built and remembered`);
+      } else if (m.type === 'exit') finish('recording ended');
+    };
+    w.onerror = e => { problems.push('worker error: ' + e.message); finish('error'); };
+    w.postMessage({ type: 'start', noPace: true, ctrl: ctrl.buffer, pad: pad.buffer, ring: new SharedArrayBuffer(8 + 44100 * 4),
+      discs: [1, 2].filter(d => have.discs[d]).map(d => have.discs[d]), patches: have.patches, caches: have.caches,
+      english: have.patches.length > 0, cards: card1 ? [{ slot: 0, data: await card1.arrayBuffer() }] : [],
+      extraFiles, extraArgs: ['--play-input', '/rec/' + have.rec.name],
+      hd: { scale, wide: !!(p.bits & B.wide), ocean: !!(p.bits & B.ocean), settings: hdSet.buffer, port: chan.port1, done: doneSab,
+            skip: p.cpu ? 1e9 : from } }, [chan.port1]);
+  });
+}
+
+// ---------------------------------------------------------------- run all
+const results = [];
+function fmt(r) {
+  if (r.error) return `<td>${r.p.name}</td><td colspan="5" class="bad">${r.error}</td><td></td>`;
+  const c = r.fps >= 62 ? 'ok' : r.fps >= 57 ? 'warn' : 'bad';
+  const name = r.p.cpu ? r.p.name : r.p.name.replace('Test scale', `${r.scale}×`);
+  return `<td>${name}</td><td class="n">${r.fields}</td><td class="n ${c}">${r.fps.toFixed(1)}</td>` +
+    `<td class="n">${(r.slow * 100).toFixed(1)}%</td><td class="n">${r.p99.toFixed(1)} ms</td><td class="n">${r.worst.toFixed(0)} ms</td>` +
+    `<td class="${r.problems.length ? 'bad' : 'ok'}">${r.problems.length ? [...new Set(r.problems)].slice(0, 3).join('; ') : 'none'}</td>`;
+}
+$('go').onclick = async () => {
+  running = true; stopAll = false; $('go').disabled = true; $('stop').disabled = false;
+  const from = +$('from').value || 0, to = +$('to').value || 0, size = $('size').value, ts = +$('tscale').value;
+  const chosen = PASSES.filter(p => document.querySelector(`input[data-id="${p.id}"]`).checked);
+  results.length = 0; $('results').tBodies[0].innerHTML = '';
+  log(`GPU: ${navigator.gpu ? 'WebGPU available' : 'no WebGPU'}; picture ${size}; fields ${from}-${to || 'end'}`);
+  for (const p0 of chosen) {
+    if (stopAll) break;
+    const p = { ...p0, scale: p0.scale || ts };
+    $('status').textContent = `${p.name}…`;
+    const r = await runPass(p, from, to, size);
+    results.push(r);
+    const tr = document.createElement('tr'); tr.innerHTML = fmt(r); $('results').tBodies[0].appendChild(tr);
+    await new Promise(res => setTimeout(res, 800));       // let the GPU settle between passes
+  }
+  running = false; $('go').disabled = false; $('stop').disabled = true; $('copy').disabled = !results.length;
+  $('status').textContent = stopAll ? 'Stopped.' : 'Done.';
+};
+$('stop').onclick = () => { stopAll = true; };
+$('copy').onclick = () => {
+  const lines = [`Renderer benchmark — ${new Date().toISOString()} — ${navigator.userAgent}`,
+    `recording ${have.rec ? have.rec.name : '?'}, fields ${$('from').value}-${$('to').value || 'end'}, picture ${$('size').value}`];
+  for (const r of results) lines.push(r.error ? `${r.p.name}: ${r.error}` :
+    `${r.p.cpu ? r.p.name : r.p.name.replace('Test scale', r.scale + 'x')}: ${r.fields} fields, ${r.fps.toFixed(1)} fields/s, ` +
+    `${(r.slow * 100).toFixed(1)}% slower than 60, p99 ${r.p99.toFixed(1)} ms, worst ${r.worst.toFixed(0)} ms, ` +
+    `problems: ${r.problems.length ? [...new Set(r.problems)].join('; ') : 'none'}`);
+  navigator.clipboard.writeText(lines.join('\n')).then(() => $('status').textContent = 'Results copied.');
+};
+</script>
+</html>

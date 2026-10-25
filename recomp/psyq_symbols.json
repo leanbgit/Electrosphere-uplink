@@ -1,0 +1,1808 @@
+[
+ {
+  "addr": 2147969780,
+  "name": "labs",
+  "lib": "LIBC2.LIB",
+  "module": "ABS_1"
+ },
+ {
+  "addr": 2148120848,
+  "name": "PadEnableCom",
+  "lib": "LIBPAD.LIB",
+  "module": "PDMAIN1"
+ },
+ {
+  "addr": 2148121172,
+  "name": "_padIsVsync",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148121276,
+  "name": "_padIntPad",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148121676,
+  "name": "PadChkVsync",
+  "lib": "LIBPAD.LIB",
+  "module": "PDMAIN2"
+ },
+ {
+  "addr": 2148121696,
+  "name": "PadStartCom",
+  "lib": "LIBPAD.LIB",
+  "module": "PDMAIINI"
+ },
+ {
+  "addr": 2148121900,
+  "name": "PadStopCom",
+  "lib": "LIBPAD.LIB",
+  "module": "PDMAIINI"
+ },
+ {
+  "addr": 2148121968,
+  "name": "_padInitSioMode",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148124188,
+  "name": "_padClrIntSio0",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148124332,
+  "name": "_padWaitRXready",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148126064,
+  "name": "PadChkMtap",
+  "lib": "LIBPAD.LIB",
+  "module": "PDENT1"
+ },
+ {
+  "addr": 2148126140,
+  "name": "PadGetState",
+  "lib": "LIBPAD.LIB",
+  "module": "PDENT2"
+ },
+ {
+  "addr": 2148126344,
+  "name": "PadInfoMode",
+  "lib": "LIBPAD.LIB",
+  "module": "PDENT3"
+ },
+ {
+  "addr": 2148126592,
+  "name": "PadInfoAct",
+  "lib": "LIBPAD.LIB",
+  "module": "PDENT4"
+ },
+ {
+  "addr": 2148126804,
+  "name": "PadInfoComb",
+  "lib": "LIBPAD.LIB",
+  "module": "PDENT5"
+ },
+ {
+  "addr": 2148127196,
+  "name": "_padSetCmd",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148127212,
+  "name": "_padSendAtLoadInfo",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148127344,
+  "name": "_padRecvAtLoadInfo",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148127968,
+  "name": "_padGetActSize",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148128024,
+  "name": "_padLoadActInfo",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148130084,
+  "name": "_padCmdParaMode",
+  "lib": "LIBPAD.LIB",
+  "module": "PDRESRES"
+ },
+ {
+  "addr": 2148132824,
+  "name": "_dirFailAuto",
+  "lib": "LIBPAD.LIB",
+  "module": "PDDIRRES"
+ },
+ {
+  "addr": 2148135032,
+  "name": "_SpuInit",
+  "lib": "LIBSPU.LIB",
+  "module": "S_INI"
+ },
+ {
+  "addr": 2148135264,
+  "name": "SpuStart",
+  "lib": "LIBSPU.LIB",
+  "module": "S_INI"
+ },
+ {
+  "addr": 2148135384,
+  "name": "_spu_init",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148136472,
+  "name": "_spu_FiDMA",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148136660,
+  "name": "_spu_Fr_",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148136828,
+  "name": "_spu_t",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148137468,
+  "name": "_spu_Fw",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148137600,
+  "name": "_spu_Fr",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148137700,
+  "name": "_spu_FsetRXX",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148137768,
+  "name": "_spu_FsetRXXa",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148137932,
+  "name": "_spu_FgetRXXa",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148137992,
+  "name": "_spu_FsetPCR",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148138160,
+  "name": "_spu_Fw1ts",
+  "lib": "LIBSPU.LIB",
+  "module": "SPU"
+ },
+ {
+  "addr": 2148138264,
+  "name": "_SpuDataCallback",
+  "lib": "LIBSPU.LIB",
+  "module": "S_DCB"
+ },
+ {
+  "addr": 2148138312,
+  "name": "SpuInit",
+  "lib": "LIBSPU.LIB",
+  "module": "S_I"
+ },
+ {
+  "addr": 2148138344,
+  "name": "SpuQuit",
+  "lib": "LIBSPU.LIB",
+  "module": "S_Q"
+ },
+ {
+  "addr": 2148138472,
+  "name": "SpuSetReverb",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SR"
+ },
+ {
+  "addr": 2148138680,
+  "name": "_SpuIsInAllocateArea",
+  "lib": "LIBSPU.LIB",
+  "module": "S_M_UTIL"
+ },
+ {
+  "addr": 2148138808,
+  "name": "_SpuIsInAllocateArea_",
+  "lib": "LIBSPU.LIB",
+  "module": "S_M_UTIL"
+ },
+ {
+  "addr": 2148138952,
+  "name": "SpuSetReverbModeParam",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SRMP"
+ },
+ {
+  "addr": 2148140200,
+  "name": "_spu_setReverbAttr",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SRA"
+ },
+ {
+  "addr": 2148141432,
+  "name": "SpuSetReverbDepth",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SRD"
+ },
+ {
+  "addr": 2148141560,
+  "name": "SpuSetReverbVoice",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SRV"
+ },
+ {
+  "addr": 2148141608,
+  "name": "_SpuSetAnyVoice",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SAV"
+ },
+ {
+  "addr": 2148142312,
+  "name": "SpuClearReverbWorkArea",
+  "lib": "LIBSPU.LIB",
+  "module": "S_CRWA"
+ },
+ {
+  "addr": 2148142728,
+  "name": "SpuReadDecodedData",
+  "lib": "LIBSPU.LIB",
+  "module": "S_RDD"
+ },
+ {
+  "addr": 2148142840,
+  "name": "SpuSetKey",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SK"
+ },
+ {
+  "addr": 2148143288,
+  "name": "SpuWrite",
+  "lib": "LIBSPU.LIB",
+  "module": "S_W"
+ },
+ {
+  "addr": 2148143384,
+  "name": "SpuWrite0",
+  "lib": "LIBSPU.LIB",
+  "module": "S_W0"
+ },
+ {
+  "addr": 2148143736,
+  "name": "SpuSetTransferStartAddr",
+  "lib": "LIBSPU.LIB",
+  "module": "S_STSA"
+ },
+ {
+  "addr": 2148143832,
+  "name": "SpuSetTransferMode",
+  "lib": "LIBSPU.LIB",
+  "module": "S_STM"
+ },
+ {
+  "addr": 2148143880,
+  "name": "SpuIsTransferCompleted",
+  "lib": "LIBSPU.LIB",
+  "module": "S_ITC"
+ },
+ {
+  "addr": 2148144056,
+  "name": "SpuSetCommonAttr",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SCA"
+ },
+ {
+  "addr": 2148144952,
+  "name": "SpuRGetAllKeysStatus",
+  "lib": "LIBSPU.LIB",
+  "module": "SR_GAKS"
+ },
+ {
+  "addr": 2148145164,
+  "name": "SpuGetAllKeysStatus",
+  "lib": "LIBSPU.LIB",
+  "module": "SR_GAKS"
+ },
+ {
+  "addr": 2148145304,
+  "name": "SpuSetVoiceAttr",
+  "lib": "LIBSPU.LIB",
+  "module": "S_SVA"
+ },
+ {
+  "addr": 2148146840,
+  "name": "_spu_note2pitch",
+  "lib": "LIBSPU.LIB",
+  "module": "S_N2P"
+ },
+ {
+  "addr": 2148147048,
+  "name": "_spu_pitch2note",
+  "lib": "LIBSPU.LIB",
+  "module": "S_N2P"
+ },
+ {
+  "addr": 2148147352,
+  "name": "VSync",
+  "lib": "LIBETC.LIB",
+  "module": "VSYNC"
+ },
+ {
+  "addr": 2148147880,
+  "name": "ResetCallback",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148147928,
+  "name": "InterruptCallback",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148147976,
+  "name": "DMACallback",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148148024,
+  "name": "VSyncCallback",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148148076,
+  "name": "VSyncCallbacks",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148148124,
+  "name": "StopCallback",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148148172,
+  "name": "RestartCallback",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148148220,
+  "name": "CheckCallback",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148148236,
+  "name": "GetIntrMask",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148148260,
+  "name": "SetIntrMask",
+  "lib": "LIBETC.LIB",
+  "module": "INTR"
+ },
+ {
+  "addr": 2148149608,
+  "name": "startIntrVSync",
+  "lib": "LIBETC.LIB",
+  "module": "INTR_VB"
+ },
+ {
+  "addr": 2148149896,
+  "name": "startIntrDMA",
+  "lib": "LIBETC.LIB",
+  "module": "INTR_DMA"
+ },
+ {
+  "addr": 2148150616,
+  "name": "CdInit",
+  "lib": "LIBCD.LIB",
+  "module": "EVENT"
+ },
+ {
+  "addr": 2148151000,
+  "name": "CdLastPos",
+  "lib": "LIBCD.LIB",
+  "module": "S_006"
+ },
+ {
+  "addr": 2148151012,
+  "name": "CdReset",
+  "lib": "LIBCD.LIB",
+  "module": "S_007"
+ },
+ {
+  "addr": 2148151120,
+  "name": "CdFlush",
+  "lib": "LIBCD.LIB",
+  "module": "S_008"
+ },
+ {
+  "addr": 2148151172,
+  "name": "CdComstr",
+  "lib": "LIBCD.LIB",
+  "module": "S_010"
+ },
+ {
+  "addr": 2148151224,
+  "name": "CdIntstr",
+  "lib": "LIBCD.LIB",
+  "module": "S_011"
+ },
+ {
+  "addr": 2148151276,
+  "name": "CdSync",
+  "lib": "LIBCD.LIB",
+  "module": "S_012"
+ },
+ {
+  "addr": 2148151308,
+  "name": "CdReady",
+  "lib": "LIBCD.LIB",
+  "module": "S_013"
+ },
+ {
+  "addr": 2148151380,
+  "name": "CdControl",
+  "lib": "LIBCD.LIB",
+  "module": "S_016"
+ },
+ {
+  "addr": 2148151696,
+  "name": "CdControlF",
+  "lib": "LIBCD.LIB",
+  "module": "S_016"
+ },
+ {
+  "addr": 2148152004,
+  "name": "CdControlB",
+  "lib": "LIBCD.LIB",
+  "module": "S_016"
+ },
+ {
+  "addr": 2148152336,
+  "name": "CdMix",
+  "lib": "LIBCD.LIB",
+  "module": "S_020"
+ },
+ {
+  "addr": 2148152368,
+  "name": "CdGetSector",
+  "lib": "LIBCD.LIB",
+  "module": "S_021"
+ },
+ {
+  "addr": 2148152400,
+  "name": "CdGetSector2",
+  "lib": "LIBCD.LIB",
+  "module": "S_022"
+ },
+ {
+  "addr": 2148152432,
+  "name": "CdDataCallback",
+  "lib": "LIBCD.LIB",
+  "module": "S_023"
+ },
+ {
+  "addr": 2148152468,
+  "name": "CdDataSync",
+  "lib": "LIBCD.LIB",
+  "module": "S_024"
+ },
+ {
+  "addr": 2148153884,
+  "name": "CD_sync",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148154524,
+  "name": "CD_ready",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148155236,
+  "name": "CD_cw",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148156272,
+  "name": "CD_vol",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148156408,
+  "name": "CD_flush",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148156620,
+  "name": "CD_initvol",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148156860,
+  "name": "CD_initintr",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148156936,
+  "name": "CD_init",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148157416,
+  "name": "CD_datasync",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148157776,
+  "name": "CD_getsector",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_2"
+ },
+ {
+  "addr": 2148158032,
+  "name": "CD_getsector2",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_3"
+ },
+ {
+  "addr": 2148158268,
+  "name": "CD_set_test_parmnum",
+  "lib": "LIBCD.LIB",
+  "module": "BIOS_1"
+ },
+ {
+  "addr": 2148158504,
+  "name": "CdSearchFile",
+  "lib": "LIBCD.LIB",
+  "module": "ISO9660"
+ },
+ {
+  "addr": 2148162296,
+  "name": "CdReadBreak",
+  "lib": "LIBCD.LIB",
+  "module": "CDR_1"
+ },
+ {
+  "addr": 2148162712,
+  "name": "CdRead",
+  "lib": "LIBCD.LIB",
+  "module": "CDR_1"
+ },
+ {
+  "addr": 2148163124,
+  "name": "CdReadSync",
+  "lib": "LIBCD.LIB",
+  "module": "CDR_1"
+ },
+ {
+  "addr": 2148163432,
+  "name": "CdIntToPos",
+  "lib": "LIBCD.LIB",
+  "module": "S_002"
+ },
+ {
+  "addr": 2148163692,
+  "name": "CdPosToInt",
+  "lib": "LIBCD.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148163832,
+  "name": "rsin",
+  "lib": "LIBGTE.LIB",
+  "module": "GEO_00"
+ },
+ {
+  "addr": 2148163892,
+  "name": "sin_1",
+  "lib": "LIBGTE.LIB",
+  "module": "GEO_00"
+ },
+ {
+  "addr": 2148164040,
+  "name": "rcos",
+  "lib": "LIBGTE.LIB",
+  "module": "GEO_01"
+ },
+ {
+  "addr": 2148164208,
+  "name": "InitGeom",
+  "lib": "LIBGTE.LIB",
+  "module": "MSC00"
+ },
+ {
+  "addr": 2148164344,
+  "name": "SquareRoot0",
+  "lib": "LIBGTE.LIB",
+  "module": "MSC01"
+ },
+ {
+  "addr": 2148164488,
+  "name": "InvSquareRoot",
+  "lib": "LIBGTE.LIB",
+  "module": "MSC02"
+ },
+ {
+  "addr": 2148164628,
+  "name": "VectorNormalS",
+  "lib": "LIBGTE.LIB",
+  "module": "MSC02"
+ },
+ {
+  "addr": 2148164648,
+  "name": "VectorNormal",
+  "lib": "LIBGTE.LIB",
+  "module": "MSC02"
+ },
+ {
+  "addr": 2148164696,
+  "name": "VectorNormalSS",
+  "lib": "LIBGTE.LIB",
+  "module": "MSC02"
+ },
+ {
+  "addr": 2148164936,
+  "name": "MatrixNormal",
+  "lib": "LIBGTE.LIB",
+  "module": "MSC02"
+ },
+ {
+  "addr": 2148165176,
+  "name": "MulMatrix0",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_000"
+ },
+ {
+  "addr": 2148165448,
+  "name": "CompMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_003"
+ },
+ {
+  "addr": 2148165800,
+  "name": "ApplyMatrixLV",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_004"
+ },
+ {
+  "addr": 2148166152,
+  "name": "SetMulMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_00B"
+ },
+ {
+  "addr": 2148166424,
+  "name": "ApplyRotMatrixLV",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_01"
+ },
+ {
+  "addr": 2148166744,
+  "name": "MulMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_03"
+ },
+ {
+  "addr": 2148167016,
+  "name": "MulMatrix2",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_04"
+ },
+ {
+  "addr": 2148167288,
+  "name": "ApplyMatrixSV",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_06"
+ },
+ {
+  "addr": 2148167384,
+  "name": "TransMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_07"
+ },
+ {
+  "addr": 2148167432,
+  "name": "ScaleMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_08"
+ },
+ {
+  "addr": 2148167752,
+  "name": "SetRotMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_09"
+ },
+ {
+  "addr": 2148167800,
+  "name": "SetColorMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_11"
+ },
+ {
+  "addr": 2148167848,
+  "name": "SetTransMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "MTX_12"
+ },
+ {
+  "addr": 2148167880,
+  "name": "ReadGeomOffset",
+  "lib": "LIBGTE.LIB",
+  "module": "REG08"
+ },
+ {
+  "addr": 2148167912,
+  "name": "ReadGeomScreen",
+  "lib": "LIBGTE.LIB",
+  "module": "REG09"
+ },
+ {
+  "addr": 2148167928,
+  "name": "SetBackColor",
+  "lib": "LIBGTE.LIB",
+  "module": "REG10"
+ },
+ {
+  "addr": 2148167960,
+  "name": "SetGeomOffset",
+  "lib": "LIBGTE.LIB",
+  "module": "REG12"
+ },
+ {
+  "addr": 2148167992,
+  "name": "SetGeomScreen",
+  "lib": "LIBGTE.LIB",
+  "module": "REG13"
+ },
+ {
+  "addr": 2148168008,
+  "name": "LightColor",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_1"
+ },
+ {
+  "addr": 2148168048,
+  "name": "DpqColorLight",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_2"
+ },
+ {
+  "addr": 2148168088,
+  "name": "DpqColor3",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_3"
+ },
+ {
+  "addr": 2148168148,
+  "name": "Intpl",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_4"
+ },
+ {
+  "addr": 2148168184,
+  "name": "Square12",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_5"
+ },
+ {
+  "addr": 2148168224,
+  "name": "Square0",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_6"
+ },
+ {
+  "addr": 2148168264,
+  "name": "AverageZ3",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_7"
+ },
+ {
+  "addr": 2148168280,
+  "name": "AverageSZ3",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_11"
+ },
+ {
+  "addr": 2148168296,
+  "name": "AverageZ4",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_8"
+ },
+ {
+  "addr": 2148168316,
+  "name": "AverageSZ4",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_12"
+ },
+ {
+  "addr": 2148168332,
+  "name": "OuterProduct12",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_9"
+ },
+ {
+  "addr": 2148168420,
+  "name": "OuterProduct0",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_1"
+ },
+ {
+  "addr": 2148168508,
+  "name": "Lzc",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_00_1"
+ },
+ {
+  "addr": 2148168520,
+  "name": "ReadLZC",
+  "lib": "LIBGTE.LIB",
+  "module": "REG02_8"
+ },
+ {
+  "addr": 2148168536,
+  "name": "RotTransPers",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_02"
+ },
+ {
+  "addr": 2148168584,
+  "name": "RotTransPers3",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_03"
+ },
+ {
+  "addr": 2148168680,
+  "name": "RotTrans",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_04"
+ },
+ {
+  "addr": 2148168708,
+  "name": "ReadFLAG",
+  "lib": "LIBGTE.LIB",
+  "module": "REG02_9"
+ },
+ {
+  "addr": 2148168728,
+  "name": "NormalClip",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_05"
+ },
+ {
+  "addr": 2148168748,
+  "name": "NormalClipS",
+  "lib": "LIBGTE.LIB",
+  "module": "SMP_06"
+ },
+ {
+  "addr": 2148168752,
+  "name": "ReadMac0",
+  "lib": "LIBGTE.LIB",
+  "module": "REG02_5"
+ },
+ {
+  "addr": 2148168776,
+  "name": "TransposeMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "FGO_00"
+ },
+ {
+  "addr": 2148168840,
+  "name": "RotMatrix",
+  "lib": "LIBGTE.LIB",
+  "module": "FGO_01"
+ },
+ {
+  "addr": 2148169496,
+  "name": "RotMatrixYXZ",
+  "lib": "LIBGTE.LIB",
+  "module": "FGO_02"
+ },
+ {
+  "addr": 2148170152,
+  "name": "RotMatrix_gte",
+  "lib": "LIBGTE.LIB",
+  "module": "RMAT_01"
+ },
+ {
+  "addr": 2148170680,
+  "name": "ratan2",
+  "lib": "LIBGTE.LIB",
+  "module": "RATAN"
+ },
+ {
+  "addr": 2148171064,
+  "name": "_patch_gte",
+  "lib": "LIBGTE.LIB",
+  "module": "PATCHGTE"
+ },
+ {
+  "addr": 2148171288,
+  "name": "ResetGraph",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148171660,
+  "name": "SetGraphDebug",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148171752,
+  "name": "SetGraphQueue",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148171916,
+  "name": "GetGraphDebug",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148171932,
+  "name": "DrawSyncCallback",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148172028,
+  "name": "SetDispMask",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148172180,
+  "name": "DrawSync",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148172568,
+  "name": "ClearImage",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148172712,
+  "name": "ClearImage2",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148172864,
+  "name": "LoadImage",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148172960,
+  "name": "StoreImage",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148173056,
+  "name": "MoveImage",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148173240,
+  "name": "ClearOTag",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148173440,
+  "name": "ClearOTagR",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148173612,
+  "name": "DrawPrim",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148173704,
+  "name": "DrawOTag",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148173816,
+  "name": "PutDrawEnv",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148174008,
+  "name": "DrawOTagEnv",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148174224,
+  "name": "GetDrawEnv",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148174276,
+  "name": "PutDispEnv",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148175548,
+  "name": "GetDispEnv",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148175600,
+  "name": "GetODE",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148175648,
+  "name": "SetDrawArea",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148175776,
+  "name": "SetDrawOffset",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148182240,
+  "name": "LoadImage2",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148182476,
+  "name": "StoreImage2",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148182712,
+  "name": "MoveImage2",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148183036,
+  "name": "DrawOTag2",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148183288,
+  "name": "_GPU_ResetCallback",
+  "lib": "LIBGPU.LIB",
+  "module": "SYS"
+ },
+ {
+  "addr": 2148183368,
+  "name": "OpenTIM",
+  "lib": "LIBGPU.LIB",
+  "module": "T00"
+ },
+ {
+  "addr": 2148183484,
+  "name": "OpenTMD",
+  "lib": "LIBGPU.LIB",
+  "module": "T01"
+ },
+ {
+  "addr": 2148189640,
+  "name": "SetDefDrawEnv",
+  "lib": "LIBGPU.LIB",
+  "module": "E03"
+ },
+ {
+  "addr": 2148189832,
+  "name": "SetDefDispEnv",
+  "lib": "LIBGPU.LIB",
+  "module": "E04"
+ },
+ {
+  "addr": 2148189896,
+  "name": "GetTPage",
+  "lib": "LIBGPU.LIB",
+  "module": "P00"
+ },
+ {
+  "addr": 2148189960,
+  "name": "GetClut",
+  "lib": "LIBGPU.LIB",
+  "module": "P01"
+ },
+ {
+  "addr": 2148189992,
+  "name": "CatPrim",
+  "lib": "LIBGPU.LIB",
+  "module": "P08"
+ },
+ {
+  "addr": 2148190040,
+  "name": "SetDrawTPage",
+  "lib": "LIBGPU.LIB",
+  "module": "P33"
+ },
+ {
+  "addr": 2148190088,
+  "name": "SetDrawLoad",
+  "lib": "LIBGPU.LIB",
+  "module": "P35"
+ },
+ {
+  "addr": 2148190200,
+  "name": "SetDrawMode",
+  "lib": "LIBGPU.LIB",
+  "module": "P41"
+ },
+ {
+  "addr": 2148190360,
+  "name": "DecDCTReset",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148190412,
+  "name": "DecDCTGetEnv",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148190552,
+  "name": "DecDCTPutEnv",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148190704,
+  "name": "DecDCTin",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148190828,
+  "name": "DecDCTout",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148190860,
+  "name": "DecDCTinSync",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148190920,
+  "name": "DecDCToutSync",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148190992,
+  "name": "DecDCTinCallback",
+  "lib": "LIBPRESS.LIB",
+  "module": "LIBPRESS"
+ },
+ {
+  "addr": 2148191028,
+  "name": "CdGetToc",
+  "lib": "LIBCD.LIB",
+  "module": "TOC"
+ },
+ {
+  "addr": 2148192040,
+  "name": "DecDCTvlcSize2",
+  "lib": "LIBPRESS.LIB",
+  "module": "VLC_C"
+ },
+ {
+  "addr": 2148192088,
+  "name": "DecDCTvlc2",
+  "lib": "LIBPRESS.LIB",
+  "module": "VLC_C"
+ },
+ {
+  "addr": 2148192936,
+  "name": "DecDCTvlcBuild",
+  "lib": "LIBPRESS.LIB",
+  "module": "BUILD"
+ },
+ {
+  "addr": 2148193176,
+  "name": "DecDCTBufSize",
+  "lib": "LIBPRESS.LIB",
+  "module": "DCT002"
+ },
+ {
+  "addr": 2148193192,
+  "name": "_bu_init",
+  "lib": "LIBAPI.LIB",
+  "module": "C112"
+ },
+ {
+  "addr": 2148193208,
+  "name": "_card_info",
+  "lib": "LIBCARD.LIB",
+  "module": "C171"
+ },
+ {
+  "addr": 2148193224,
+  "name": "_card_load",
+  "lib": "LIBCARD.LIB",
+  "module": "C172"
+ },
+ {
+  "addr": 2148193240,
+  "name": "_card_clear",
+  "lib": "LIBCARD.LIB",
+  "module": "CARD"
+ },
+ {
+  "addr": 2148193304,
+  "name": "_card_write",
+  "lib": "LIBCARD.LIB",
+  "module": "A78"
+ },
+ {
+  "addr": 2148193320,
+  "name": "_new_card",
+  "lib": "LIBCARD.LIB",
+  "module": "A80"
+ },
+ {
+  "addr": 2148193336,
+  "name": "InitCARD",
+  "lib": "LIBCARD.LIB",
+  "module": "INIT"
+ },
+ {
+  "addr": 2148193480,
+  "name": "StartCARD",
+  "lib": "LIBCARD.LIB",
+  "module": "INIT"
+ },
+ {
+  "addr": 2148193552,
+  "name": "StopCARD",
+  "lib": "LIBCARD.LIB",
+  "module": "INIT"
+ },
+ {
+  "addr": 2148193592,
+  "name": "InitCARD2",
+  "lib": "LIBCARD.LIB",
+  "module": "A74"
+ },
+ {
+  "addr": 2148193608,
+  "name": "StartCARD2",
+  "lib": "LIBCARD.LIB",
+  "module": "A75"
+ },
+ {
+  "addr": 2148193624,
+  "name": "StopCARD2",
+  "lib": "LIBCARD.LIB",
+  "module": "A76"
+ },
+ {
+  "addr": 2148193640,
+  "name": "_patch_card_info",
+  "lib": "LIBCARD.LIB",
+  "module": "PATCH"
+ },
+ {
+  "addr": 2148193860,
+  "name": "_patch_card",
+  "lib": "LIBCARD.LIB",
+  "module": "PATCH"
+ },
+ {
+  "addr": 2148194008,
+  "name": "_patch_card2",
+  "lib": "LIBCARD.LIB",
+  "module": "PATCH"
+ },
+ {
+  "addr": 2148194120,
+  "name": "_copy_memcard_patch",
+  "lib": "LIBCARD.LIB",
+  "module": "PATCH"
+ },
+ {
+  "addr": 2148194184,
+  "name": "_ExitCard",
+  "lib": "LIBCARD.LIB",
+  "module": "END"
+ },
+ {
+  "addr": 2148195272,
+  "name": "_card_read",
+  "lib": "LIBCARD.LIB",
+  "module": "A79"
+ },
+ {
+  "addr": 2148195288,
+  "name": "_card_status",
+  "lib": "LIBCARD.LIB",
+  "module": "A92"
+ },
+ {
+  "addr": 2148195304,
+  "name": "bzero",
+  "lib": "LIBC2.LIB",
+  "module": "BZERO"
+ },
+ {
+  "addr": 2148195352,
+  "name": "toupper",
+  "lib": "LIBC2.LIB",
+  "module": "CTYPE_1"
+ },
+ {
+  "addr": 2148195404,
+  "name": "tolower",
+  "lib": "LIBC2.LIB",
+  "module": "CTYPE_2"
+ },
+ {
+  "addr": 2148195464,
+  "name": "memchr",
+  "lib": "LIBC2.LIB",
+  "module": "MEMCHR"
+ },
+ {
+  "addr": 2148195544,
+  "name": "memcpy",
+  "lib": "LIBC2.LIB",
+  "module": "MEMCPY"
+ },
+ {
+  "addr": 2148195608,
+  "name": "memset",
+  "lib": "LIBC2.LIB",
+  "module": "MEMSET"
+ },
+ {
+  "addr": 2148195656,
+  "name": "rand",
+  "lib": "LIBC2.LIB",
+  "module": "RAND"
+ },
+ {
+  "addr": 2148195704,
+  "name": "srand",
+  "lib": "LIBC2.LIB",
+  "module": "RAND"
+ },
+ {
+  "addr": 2148195720,
+  "name": "strcat",
+  "lib": "LIBC2.LIB",
+  "module": "STRCAT"
+ },
+ {
+  "addr": 2148195896,
+  "name": "strcmp",
+  "lib": "LIBC2.LIB",
+  "module": "STRCMP"
+ },
+ {
+  "addr": 2148196008,
+  "name": "strcpy",
+  "lib": "LIBC2.LIB",
+  "module": "STRCPY"
+ },
+ {
+  "addr": 2148196088,
+  "name": "strlen",
+  "lib": "LIBC2.LIB",
+  "module": "STRLEN"
+ },
+ {
+  "addr": 2148196152,
+  "name": "strncmp",
+  "lib": "LIBC2.LIB",
+  "module": "STRNCMP"
+ },
+ {
+  "addr": 2148196280,
+  "name": "printf",
+  "lib": "LIBC2.LIB",
+  "module": "PRINTF"
+ },
+ {
+  "addr": 2148196344,
+  "name": "prnt",
+  "lib": "LIBC2.LIB",
+  "module": "PRNT"
+ },
+ {
+  "addr": 2148198040,
+  "name": "_putchar",
+  "lib": "LIBC2.LIB",
+  "module": "PUTCHAR"
+ },
+ {
+  "addr": 2148198292,
+  "name": "_putchar_flash",
+  "lib": "LIBC2.LIB",
+  "module": "PUTCHAR"
+ },
+ {
+  "addr": 2148198352,
+  "name": "putchar",
+  "lib": "LIBC2.LIB",
+  "module": "PUTCHAR"
+ },
+ {
+  "addr": 2148198648,
+  "name": "sprintf",
+  "lib": "LIBC2.LIB",
+  "module": "SPRINTF"
+ },
+ {
+  "addr": 2148200824,
+  "name": "memmove",
+  "lib": "LIBC2.LIB",
+  "module": "MEMMOVE"
+ },
+ {
+  "addr": 2148200936,
+  "name": "puts",
+  "lib": "LIBC2.LIB",
+  "module": "PUTS"
+ },
+ {
+  "addr": 2148201032,
+  "name": "setjmp",
+  "lib": "LIBC2.LIB",
+  "module": "SETJMP"
+ },
+ {
+  "addr": 2148201092,
+  "name": "longjmp",
+  "lib": "LIBC2.LIB",
+  "module": "SETJMP"
+ },
+ {
+  "addr": 2148201160,
+  "name": "InitHeap",
+  "lib": "LIBAPI.LIB",
+  "module": "C57"
+ },
+ {
+  "addr": 2148201176,
+  "name": "FlushCache",
+  "lib": "LIBAPI.LIB",
+  "module": "C68"
+ },
+ {
+  "addr": 2148201192,
+  "name": "GPU_cw",
+  "lib": "LIBAPI.LIB",
+  "module": "C73"
+ },
+ {
+  "addr": 2148201216,
+  "name": "_96_remove",
+  "lib": "LIBAPI.LIB",
+  "module": "C114"
+ },
+ {
+  "addr": 2148201240,
+  "name": "DeliverEvent",
+  "lib": "LIBAPI.LIB",
+  "module": "A07"
+ },
+ {
+  "addr": 2148201256,
+  "name": "OpenEvent",
+  "lib": "LIBAPI.LIB",
+  "module": "A08"
+ },
+ {
+  "addr": 2148201272,
+  "name": "CloseEvent",
+  "lib": "LIBAPI.LIB",
+  "module": "A09"
+ },
+ {
+  "addr": 2148201288,
+  "name": "WaitEvent",
+  "lib": "LIBAPI.LIB",
+  "module": "A10"
+ },
+ {
+  "addr": 2148201304,
+  "name": "TestEvent",
+  "lib": "LIBAPI.LIB",
+  "module": "A11"
+ },
+ {
+  "addr": 2148201320,
+  "name": "EnableEvent",
+  "lib": "LIBAPI.LIB",
+  "module": "A12"
+ },
+ {
+  "addr": 2148201336,
+  "name": "DisableEvent",
+  "lib": "LIBAPI.LIB",
+  "module": "A13"
+ },
+ {
+  "addr": 2148201352,
+  "name": "ReturnFromException",
+  "lib": "LIBAPI.LIB",
+  "module": "A23"
+ },
+ {
+  "addr": 2148201368,
+  "name": "ResetEntryInt",
+  "lib": "LIBAPI.LIB",
+  "module": "A24"
+ },
+ {
+  "addr": 2148201384,
+  "name": "HookEntryInt",
+  "lib": "LIBAPI.LIB",
+  "module": "A25"
+ },
+ {
+  "addr": 2148201400,
+  "name": "EnterCriticalSection",
+  "lib": "LIBAPI.LIB",
+  "module": "A36"
+ },
+ {
+  "addr": 2148201416,
+  "name": "ExitCriticalSection",
+  "lib": "LIBAPI.LIB",
+  "module": "A37"
+ },
+ {
+  "addr": 2148201432,
+  "name": "open",
+  "lib": "LIBAPI.LIB",
+  "module": "A50"
+ },
+ {
+  "addr": 2148201448,
+  "name": "lseek",
+  "lib": "LIBAPI.LIB",
+  "module": "A51"
+ },
+ {
+  "addr": 2148201464,
+  "name": "read",
+  "lib": "LIBAPI.LIB",
+  "module": "A52"
+ },
+ {
+  "addr": 2148201480,
+  "name": "write",
+  "lib": "LIBAPI.LIB",
+  "module": "A53"
+ },
+ {
+  "addr": 2148201496,
+  "name": "close",
+  "lib": "LIBAPI.LIB",
+  "module": "A54"
+ },
+ {
+  "addr": 2148201512,
+  "name": "nextfile",
+  "lib": "LIBAPI.LIB",
+  "module": "A67"
+ },
+ {
+  "addr": 2148201528,
+  "name": "Krom2RawAdd",
+  "lib": "LIBAPI.LIB",
+  "module": "A81"
+ },
+ {
+  "addr": 2148201544,
+  "name": "ChangeClearPAD",
+  "lib": "LIBAPI.LIB",
+  "module": "A91"
+ },
+ {
+  "addr": 2148201560,
+  "name": "SysEnqIntRP",
+  "lib": "LIBAPI.LIB",
+  "module": "L02"
+ },
+ {
+  "addr": 2148201576,
+  "name": "SysDeqIntRP",
+  "lib": "LIBAPI.LIB",
+  "module": "L03"
+ },
+ {
+  "addr": 2148201592,
+  "name": "ChangeClearRCnt",
+  "lib": "LIBAPI.LIB",
+  "module": "L10"
+ },
+ {
+  "addr": 2148201608,
+  "name": "SetRCnt",
+  "lib": "LIBAPI.LIB",
+  "module": "COUNTER"
+ },
+ {
+  "addr": 2148201764,
+  "name": "GetRCnt",
+  "lib": "LIBAPI.LIB",
+  "module": "COUNTER"
+ },
+ {
+  "addr": 2148201820,
+  "name": "StartRCnt",
+  "lib": "LIBAPI.LIB",
+  "module": "COUNTER"
+ },
+ {
+  "addr": 2148201868,
+  "name": "StopRCnt",
+  "lib": "LIBAPI.LIB",
+  "module": "COUNTER"
+ },
+ {
+  "addr": 2148201920,
+  "name": "ResetRCnt",
+  "lib": "LIBAPI.LIB",
+  "module": "COUNTER"
+ },
+ {
+  "addr": 2148201976,
+  "name": "firstfile",
+  "lib": "LIBAPI.LIB",
+  "module": "FIRST"
+ },
+ {
+  "addr": 2148202648,
+  "name": "firstfile2",
+  "lib": "LIBAPI.LIB",
+  "module": "A66"
+ },
+ {
+  "addr": 2148202676,
+  "name": "ReadInitPadFlag",
+  "lib": "LIBAPI.LIB",
+  "module": "PAD"
+ },
+ {
+  "addr": 2148202692,
+  "name": "PAD_init",
+  "lib": "LIBAPI.LIB",
+  "module": "PAD"
+ },
+ {
+  "addr": 2148202836,
+  "name": "InitPAD",
+  "lib": "LIBAPI.LIB",
+  "module": "PAD"
+ },
+ {
+  "addr": 2148203432,
+  "name": "InitPAD2",
+  "lib": "LIBAPI.LIB",
+  "module": "A18"
+ },
+ {
+  "addr": 2148203448,
+  "name": "StartPAD2",
+  "lib": "LIBAPI.LIB",
+  "module": "A19"
+ },
+ {
+  "addr": 2148203464,
+  "name": "StopPAD2",
+  "lib": "LIBAPI.LIB",
+  "module": "A20"
+ },
+ {
+  "addr": 2148203480,
+  "name": "PAD_init2",
+  "lib": "LIBAPI.LIB",
+  "module": "A21"
+ },
+ {
+  "addr": 2148203496,
+  "name": "EnablePAD",
+  "lib": "LIBAPI.LIB",
+  "module": "PATCH"
+ },
+ {
+  "addr": 2148203516,
+  "name": "DisablePAD",
+  "lib": "LIBAPI.LIB",
+  "module": "PATCH"
+ },
+ {
+  "addr": 2148203536,
+  "name": "_patch_pad",
+  "lib": "LIBAPI.LIB",
+  "module": "PATCH"
+ },
+ {
+  "addr": 2148203656,
+  "name": "_remove_ChgclrPAD",
+  "lib": "LIBAPI.LIB",
+  "module": "CHCLRPAD"
+ }
+]

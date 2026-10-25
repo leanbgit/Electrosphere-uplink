@@ -1,0 +1,51 @@
+# Symbols that signature matching cannot resolve, confirmed by disassembly.
+#
+# Some Psy-Q library functions are byte-identical once the linker-relocated
+# bits are masked out, and differ only in the *data* address they touch --
+# which is exactly what the mask erases. No amount of signature work
+# separates those; they have to be identified by reading the code.
+#
+# Format:  <address> <name>   # evidence
+
+# libcd modules S_014 and S_015. Both are five instructions: load a global,
+# store the argument over it, return the old value. Identical apart from the
+# masked lui/lo pair naming the global.
+#
+#   800A302C  lui $v0,0x800B / lw $v0,0x625C($v0) / lui $at,0x800B
+#             jr $ra / sw $a0,0x625C($at)
+#   800A3040  same, against 0x800B6260
+#
+# CdControl at 0x800A3054 reads 0x800B625C (lui $s5,0x800B; lw $s5,0x625C($s5))
+# and invokes it on command completion, which identifies 0x625C as the sync
+# callback slot and therefore 0x800A302C as CdSyncCallback. 0x800A3040 is the
+# remaining module in archive order, CdReadyCallback.
+0x800A302C  CdSyncCallback
+0x800A3040  CdReadyCallback
+
+# libpress DecDCTinCallback / DecDCToutCallback. Both are "tail-call
+# DMACallback(channel, func)" and differ only in the channel constant sitting
+# in the jal's delay slot -- an immediate, which the signature mask erases.
+# With both candidates identical the matcher had a free choice and gave
+# 0x800ACB34 to CdGetToc, whose prologue/epilogue happen to match too.
+#
+#   800ACB10  addu $a1,$a0,$zero / jal DMACallback / addu  $a0,$zero,$zero  -> ch 0
+#   800ACB34  addu $a1,$a0,$zero / jal DMACallback / addiu $a0,$zero,1      -> ch 1
+#
+# DMA channel 0 is MDECin and channel 1 is MDECout, so 0x800ACB34 registers
+# the MDECout completion callback: DecDCToutCallback. Confirmed by its only
+# caller, the GMV decode-start at 0x80056B30, which passes 0x80057170 -- a
+# routine that LoadImages a decoded strip and kicks the next DecDCTout, i.e.
+# exactly an MDECout completion handler.
+0x800ACB34  DecDCToutCallback
+
+# libpad PadInitDirect at 0x8009DDD0 is deliberately NOT bound.
+#
+# It is where the game registers its controller buffers, and for a while it was
+# bound here so the HLE could capture them. That was wrong: PadInitDirect also
+# installs libpad's handler tables and its port-array pointer, and the other
+# libpad routines the game calls are still recompiled. Replacing it left those
+# globals zero, and the recompiled code then walked a table from a garbage base
+# -- a wild pointer climbing in four-byte steps from 0x093E76xx.
+#
+# So the original runs, and psyq_pad2.c reads the buffer pointers back out of
+# the state it just set up. See the note there for the offsets.

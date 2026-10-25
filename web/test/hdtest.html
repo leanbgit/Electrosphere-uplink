@@ -1,0 +1,62 @@
+<!doctype html><meta charset=utf-8>
+<!-- Development test page for enhanced graphics (not part of the site).
+     Same start-up as app.js: render worker first, then the game worker.
+     ?fields=N&shots=a,b&scale=2&wide=1&nopace=1&skip=N&rec=FILE&w=1280&h=720 -->
+<canvas id=c width=1280 height=720></canvas><script>
+const q = new URLSearchParams(location.search);
+const shots = new Set((q.get('shots') || '').split(',').filter(Boolean).map(Number));
+const maxFields = +(q.get('fields') || 600);
+window.logs = []; window.pngs = {}; window.done = false; window.fields = 0;
+const blobToUrl = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+(async () => {
+  const disc = await (await fetch('disc1.bin')).blob();
+  const disc2 = q.get('disc2') === '0' ? null : await fetch('disc2.bin').then(r => r.ok ? r.blob() : null).catch(() => null);
+  const card = await (await fetch('card1.mcd')).arrayBuffer();
+  const ctrl = new Int32Array(new SharedArrayBuffer(16)), pad = new Int32Array(new SharedArrayBuffer(28));
+  pad.set([1, 0, 0, 128, 128, 128, 128]);
+  const ring = new SharedArrayBuffer(8 + 44100 * 4);
+  const cv = document.getElementById('c'); cv.width = +(q.get('w') || 1280); cv.height = +(q.get('h') || 720);
+  const off = cv.transferControlToOffscreen(), chan = new MessageChannel(), doneSab = new SharedArrayBuffer(4);
+  const rw = new Worker('render-worker.js');
+  const ready = await new Promise(res => {
+    rw.onmessage = async e => {
+      const m = e.data;
+      if (m.type === 'ready' || m.type === 'failed') res(m);
+      else if (m.type === 'log' || m.type === 'lost') logs.push('render ' + m.type + ': ' + m.text);
+      else if (m.type === 'shot') { pngs[m.id] = await blobToUrl(m.blob); logs.push(`shot ${m.id} (drawn field ${m.seq})`); }
+    };
+    rw.postMessage({ type: 'init', canvas: off, port: chan.port2, done: doneSab, scale: +(q.get('scale') || 2) }, [off, chan.port2]);
+  });
+  logs.push('render worker: ' + JSON.stringify(ready));
+  if (ready.type !== 'ready') { done = true; return; }
+  const hdSet = new Int32Array(new SharedArrayBuffer(8));
+  if (q.get('bits')) { hdSet[0] = +q.get('bits'); hdSet[1] = 1; }
+  const toggle = (q.get('toggle') || '').split(':').map(Number);   // field:bits
+  const rec = q.get('rec'), extra = {};
+  if (rec) {
+    extra.extraFiles = [];
+    for (const n of [rec, rec + '.card1.mcd', rec + '.card2.mcd'])
+      extra.extraFiles.push({ name: n, data: await (await fetch(n)).arrayBuffer() });
+    extra.extraArgs = ['--play-input', '/rec/' + rec];
+  }
+  if (q.get('args')) extra.extraArgs = (extra.extraArgs || []).concat(q.get('args').split(' '));
+  const w = new Worker('worker.js'); const t0 = performance.now();
+  w.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'log' || m.type === 'error' || m.type === 'hd-off') logs.push(m.type + ': ' + m.text);
+    if (m.type === 'exit') { logs.push('exit ' + m.code); setTimeout(() => { done = true; }, 3000); }
+    if (m.type !== 'frame') return;
+    fields++;
+    if (shots.has(fields)) rw.postMessage({ type: 'shot', id: fields });
+    if (toggle.length === 2 && fields === toggle[0]) { Atomics.store(hdSet, 0, toggle[1]); Atomics.add(hdSet, 1, 1); logs.push('settings -> ' + toggle[1]); }
+    if (fields % 300 === 0) logs.push(`field ${fields} at ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    if (fields >= maxFields) Atomics.store(ctrl, 0, 1);
+  };
+  const en = q.get('en') === '1', blob = async u => await (await fetch(u)).blob();
+  const patches = en ? [{ disc: 1, file: await blob('p1.xdelta') }, { disc: 2, file: await blob('p2.xdelta') }] : [];
+  const caches = en ? [{ disc: 1, file: await blob('c1.cache') }, { disc: 2, file: await blob('c2.cache') }] : [];
+  w.postMessage({ type: 'start', ...extra, noPace: q.get('nopace') === '1', ctrl: ctrl.buffer, pad: pad.buffer, ring,
+    discs: disc2 ? [disc, disc2] : [disc], patches, caches, english: en, cards: [{ slot: 0, data: card }],
+    hd: { scale: ready.scale, wide: q.get('wide') !== '0', ocean: q.get('ocean') === '1', settings: hdSet.buffer, port: chan.port1, done: doneSab, skip: +(q.get('skip') || 0) } }, [chan.port1]);
+})();
+</script>

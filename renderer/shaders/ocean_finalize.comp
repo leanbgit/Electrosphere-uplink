@@ -1,0 +1,32 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2DArray P;
+layout(set = 0, binding = 2, rgba32f) uniform readonly image2DArray Q;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image2DArray disp;
+layout(set = 0, binding = 4, rgba16f) uniform image2DArray deriv;
+
+layout(push_constant) uniform Push {
+    float choppy;
+    float foam_decay;
+    float first;
+    float pad;
+} pc;
+
+void main() {
+    ivec3 id = ivec3(gl_GlobalInvocationID);
+    float sg = ((id.x + id.y) & 1) == 0 ? 1.0 : -1.0;
+    vec4 p = imageLoad(P, id) * sg;
+    vec4 q = imageLoad(Q, id) * sg;
+    float h = p.x, dx = p.y, dz = p.z, sx = p.w;
+    float sz = q.x, jxx = q.y, jzz = q.z, jxz = q.w;
+    float l = pc.choppy;
+    imageStore(disp, id, vec4(dx * l, h, dz * l, 0.0));
+    float ax = 1.0 + l * jxx, az = 1.0 + l * jzz;
+    float J = ax * az - (l * jxz) * (l * jxz);
+    vec2 slope = vec2(sx / max(ax, 0.2), sz / max(az, 0.2));
+    float old = pc.first > 0.5 ? 0.0 : imageLoad(deriv, id).a;
+    float squeeze = max(old * pc.foam_decay, max(1.0 - J, 0.0));
+    imageStore(deriv, id, vec4(slope, J - 1.0, squeeze));
+}

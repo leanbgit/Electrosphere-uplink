@@ -1,0 +1,53 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 1, rgba32f) uniform image2DArray P;
+layout(set = 0, binding = 2, rgba32f) uniform image2DArray Q;
+
+layout(push_constant) uniform Push {
+    int columns;
+    int layers;
+} pc;
+
+shared vec4 buf[256];
+
+vec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+
+ivec3 at(uint line, uint i, uint layer) {
+    return pc.columns != 0 ? ivec3(int(line), int(i), int(layer)) : ivec3(int(i), int(line), int(layer));
+}
+
+void main() {
+    uint i = gl_LocalInvocationID.x;
+    uint line = gl_WorkGroupID.y;
+    uint which = gl_WorkGroupID.z;
+    uint layer = which % uint(pc.layers);
+    bool isq = which >= uint(pc.layers);
+    vec4 v = isq ? imageLoad(Q, at(line, i, layer)) : imageLoad(P, at(line, i, layer));
+    buf[bitfieldReverse(i) >> 24] = v;
+    barrier();
+    for (uint s = 1u; s <= 8u; s++) {
+        uint m = 1u << s, half_ = m >> 1;
+        vec4 a = vec4(0.0), bw = vec4(0.0);
+        uint top = 0u, bot = 0u;
+        if (i < 128u) {
+            uint k = i % half_;
+            top = (i / half_) * m + k;
+            bot = top + half_;
+            float ang = 6.2831853 * float(k) / float(m);
+            vec2 w = vec2(cos(ang), sin(ang));
+            a = buf[top];
+            vec4 b = buf[bot];
+            bw = vec4(cmul(b.xy, w), cmul(b.zw, w));
+        }
+        barrier();
+        if (i < 128u) {
+            buf[top] = a + bw;
+            buf[bot] = a - bw;
+        }
+        barrier();
+    }
+    if (isq) imageStore(Q, at(line, i, layer), buf[i]);
+    else imageStore(P, at(line, i, layer), buf[i]);
+}

@@ -1,0 +1,6 @@
+# Line endings: shell scripts must keep LF, Windows scripts CRLF
+* text=auto
+*.sh text eol=lf
+*.bat text eol=crlf
+*.woff2 binary
+*.png binary

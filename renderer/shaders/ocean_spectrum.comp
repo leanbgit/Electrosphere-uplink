@@ -1,0 +1,41 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2DArray h0;
+layout(set = 0, binding = 1, rgba32f) uniform writeonly image2DArray P;
+layout(set = 0, binding = 2, rgba32f) uniform writeonly image2DArray Q;
+
+layout(push_constant) uniform Push {
+    vec4  patch_m;
+    float time;
+    float n;
+    float w0;
+    float pad;
+} pc;
+
+vec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+vec2 mul_i(vec2 a) { return vec2(-a.y, a.x); }
+
+void main() {
+    ivec3 id = ivec3(gl_GlobalInvocationID);
+    int N = int(pc.n);
+    float L = pc.patch_m[id.z];
+    vec2 k = 6.2831853 * (vec2(id.xy) - float(N / 2)) / L;
+    float kl = length(k);
+    vec4 s = imageLoad(h0, id);
+    float w = floor(sqrt(9.81 * kl) / pc.w0) * pc.w0;
+    vec2 e = vec2(cos(w * pc.time), sin(w * pc.time));
+    vec2 h = cmul(s.xy, e) + cmul(s.zw, vec2(e.x, -e.y));
+    vec2 kn = kl > 1e-6 ? k / kl : vec2(0.0);
+    float ik = kl > 1e-6 ? 1.0 / kl : 0.0;
+    vec2 dx = mul_i(h) * kn.x;
+    vec2 dz = mul_i(h) * kn.y;
+    vec2 sx = mul_i(h) * k.x;
+    vec2 sz = mul_i(h) * k.y;
+    vec2 jxx = h * (-k.x * k.x * ik);
+    vec2 jzz = h * (-k.y * k.y * ik);
+    vec2 jxz = h * (-k.x * k.y * ik);
+    imageStore(P, id, vec4(h + mul_i(dx), dz + mul_i(sx)));
+    imageStore(Q, id, vec4(sz + mul_i(jxx), jzz + mul_i(jxz)));
+}
