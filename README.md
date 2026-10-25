@@ -38,6 +38,20 @@ touch controls yet.
 **The game:** *Ace Combat 3: Electrosphere*, Japanese release, **Rev 1**,
 both discs.
 
+## Running it locally
+
+You need [Emscripten](https://emscripten.org/docs/getting_started/downloads.html)
+(tested with 3.1.52), Python 3 and a bash shell (on
+Windows: Git Bash or WSL).
+
+```sh
+platform/web/build.sh
+
+# serve it locally with the headers the page needs, and open the browser
+python web/dist-public/serve.py       # http://localhost:8080
+```
+
+Then drop your two disc images on the page and press **Play**.
 ### No game code
 
 `ac3.wasm` contains no code from the game. When you press Play, `ACE3.BIN` is
