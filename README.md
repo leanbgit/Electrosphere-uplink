@@ -13,6 +13,9 @@ enhanced picture is drawn with WebGPU.
 > you select stays in your browser. Project NEMO's English translation patches
 > are included.
 
+![alt text][menu]
+
+[menu]: https://github.com/leanbgit/Electrosphere-uplink/blob/main/images/ac3main.PNG "Main menu"
 ## Features
 
 - The full campaign, both discs, with memory card saves kept in the browser.
@@ -27,6 +30,9 @@ enhanced picture is drawn with WebGPU.
 - Customizable keyboard controls
 - Automatic controller compatibility
 
+![alt text][in game]
+
+[in game]: https://github.com/leanbgit/Electrosphere-uplink/blob/main/images/ac3ingame.PNG "In game"
 ## Requirements
 
 **To play:** a desktop browser with WebAssembly and SharedArrayBuffer (all
