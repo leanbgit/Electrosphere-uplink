@@ -24,6 +24,7 @@
 #include "hw_fx_web.h"
 #endif
 #include "ac3_english.h"
+#include "ac3_capture.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,7 +168,20 @@ static void hd_frame(void) {
         else if (frames_without_3d < 100000) frames_without_3d++;
         use_hd = !d.rgb24;
     }
-    int wide = hw_glue_widescreen_active() && !d.rgb24 && frames_without_3d <= 8;
+    /* Movies: some (the Archnemesis briefing) are 15-bit and reach VRAM by a
+     * path the enhanced renderer does not see, so its picture would freeze on
+     * the last 3D frame. While the movie decoder is producing frames, show the
+     * original picture, as for 24-bit movies. */
+    {
+        static u32 last_movie_frames;
+        static int movie_fields = 1000;
+        ac3_mdec_snap_t ms;
+        ac3_mdec_snapshot(&ms);
+        if (ms.frames != last_movie_frames) { last_movie_frames = ms.frames; movie_fields = 0; }
+        else if (movie_fields < 1000) movie_fields++;
+        if (movie_fields < 30) use_hd = 0;
+    }
+    int wide = use_hd && hw_glue_widescreen_active() && frames_without_3d <= 8;
     u32 flags = (use_hd ? PKT_HD : PKT_VRAM) | (wide ? PKT_WIDE : 0);
     if (web_hd_first((int)seq + 1)) {      /* first field drawn: give the GPU all of VRAM */
         PSX_RECT all = { 0, 0, 1024, 512 };
