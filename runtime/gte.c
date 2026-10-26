@@ -603,6 +603,7 @@ void ac3_gte_mtc2(ctx_t *ctx, u32 reg, u32 v) {
     }
 }
 
+extern u32 ac3_guest_ra;   /* ac3_interp.c: the caller's return address when interpreted */
 u32 ac3_gte_cfc2(ctx_t *ctx, u32 reg) {
     gte_t *g = &ctx->gte;
     switch (reg) {
@@ -634,7 +635,8 @@ u32 ac3_gte_cfc2(ctx_t *ctx, u32 reg) {
     case 25: return (u32)g->ofy;
     case 26:
 #ifdef AC3_ENHANCED
-        if (ac3_ws_factor != 1.0f && ctx->r[31] == AC3_WS_FRUSTUM_CALLER)
+        if (ac3_ws_factor != 1.0f &&
+            (ctx->r[31] == AC3_WS_FRUSTUM_CALLER || ac3_guest_ra == AC3_WS_FRUSTUM_CALLER))
             return (u32)(s32)(s16)(s32)((float)(s16)g->h * ac3_ws_factor);
 #endif
         return (u32)(s32)(s16)g->h;

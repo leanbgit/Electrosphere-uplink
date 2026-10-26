@@ -74,8 +74,13 @@ void main() {
         int clut_y = int((clut >> 6) & 511u);
 
         uint tw = v_info.z;
-        uint u = uint(int(floor(v_uv.x))) & 255u;
-        uint v = uint(int(floor(v_uv.y))) & 255u;
+        int fu = int(floor(v_uv.x)), fv = int(floor(v_uv.y));
+        if ((tp & 0x8000u) != 0u) {      // the texels the console would sample (hw.c: hw_poly)
+            fu = clamp(fu, int((tp >> 16) & 255u), int(tp >> 24));
+            fv = clamp(fv, int((clut >> 16) & 255u), int(clut >> 24));
+        }
+        uint u = uint(fu) & 255u;
+        uint v = uint(fv) & 255u;
         u = (u & (tw & 255u)) | ((tw >> 8) & 255u);
         v = (v & ((tw >> 16) & 255u)) | ((tw >> 24) & 255u);
 

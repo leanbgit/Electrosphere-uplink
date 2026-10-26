@@ -87,7 +87,7 @@ const log = t => { const l = $('log'); l.textContent += t + '\n'; l.scrollTop = 
 
 // effect bits: same as web/app.js and platform/web/web_platform.c
 const B = { wide: 1, fx: 2, far: 4, ocean: 8, clouds: 16, forest: 32, atmo: 64, gi: 128, sun: 256, fog: 512 };
-const DEFAULT = 1 | 2 | 4 | 16 | 32 | 64 | 128 | 256 | 512;
+const DEFAULT = 1 | 2 | 4 | 16 | 64 | 128 | 256 | 512;   // forests (32) removed
 const PASSES = [
   { id: 'cpu', name: 'Game only, nothing drawn (CPU limit)', scale: 2, bits: DEFAULT, cpu: true, on: true },
   { id: 's2', name: 'Enhanced 2×, default effects', scale: 2, bits: DEFAULT, on: true },
@@ -98,7 +98,7 @@ const PASSES = [
   { id: 'nofog', name: 'Test scale, original fog off (full map)', scale: 0, bits: DEFAULT & ~B.fog, on: true },
   { id: 'live', name: 'Test scale, switching settings while playing (every 60 fields)', scale: 0, bits: DEFAULT, live: true, on: true },
 ];
-const LIVE_STEPS = [DEFAULT, DEFAULT & ~B.fx, DEFAULT & ~B.far, DEFAULT & ~B.clouds, DEFAULT & ~B.forest, DEFAULT | B.ocean,
+const LIVE_STEPS = [DEFAULT, DEFAULT & ~B.fx, DEFAULT & ~B.far, DEFAULT & ~B.clouds, DEFAULT | B.ocean,
   DEFAULT & ~B.atmo, DEFAULT & ~B.sun, DEFAULT & ~B.gi, DEFAULT & ~B.fog, DEFAULT & ~B.wide, DEFAULT];
 for (const p of PASSES) {
   const l = document.createElement('label');

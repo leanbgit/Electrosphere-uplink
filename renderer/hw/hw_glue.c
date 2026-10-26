@@ -600,15 +600,18 @@ static void end_world(void) {
 
 /* Widescreen shows more of the world to the left and right than the game
  * thinks is on screen, so it leaves out the terrain tiles there. With world
- * effects on, the far-terrain pass paints the ground underneath and hides the
- * gaps. Without it (effects off, or not available yet in the browser build)
- * the gaps would show pixels left over from earlier frames as smeared streaks.
+ * effects on, the far-terrain pass paints the ground underneath, but not
+ * every part of the gaps; anything not drawn would show pixels left over from
+ * earlier frames as smeared streaks.
  * So the HD picture's drawing area is first cleared to the haze colour. Only
  * the HD picture: the game's own VRAM is not touched. */
 static void widescreen_backdrop(void) {
     G.backdrop = 1;
     if (!hw_glue_widescreen_active()) return;
-    if (G.fx && (fx_flags_now() & FX_FAR) && hw_map.valid && hw_fx_ready()) return;
+    /* Also with the far terrain on: it does not cover everything. Underground
+     * (the Geofront missions) there is no sky, and the sides above the terrain
+     * kept old pixels (HUD fragments). The effects draw over the fill wherever
+     * they do reach, so the fill is invisible elsewhere. */
     PSX_RECT r = { (s16)gpu_sw.area_x0, (s16)gpu_sw.area_y0,
                    (s16)(gpu_sw.area_x1 - gpu_sw.area_x0 + 1), (s16)(gpu_sw.area_y1 - gpu_sw.area_y0 + 1) };
     if (r.w <= 0 || r.h <= 0) return;

@@ -305,7 +305,7 @@ const gfxPref = { get() { try { return JSON.parse(localStorage.getItem('ac3.gfx'
 // Widescreen and the world effects are one bit each (same bits as
 // platform/web/web_platform.c, hd_apply_settings). They change live: the page
 // writes them into a small shared buffer that the game reads every field.
-const GFX_DEFAULT = 1 | 2 | 4 | 16 | 32 | 64 | 128 | 256 | 512;   // everything but the animated ocean
+const GFX_DEFAULT = 1 | 2 | 4 | 16 | 64 | 128 | 256 | 512;   // everything but the animated ocean (bit 32, forests, was removed)
 const GFX_VERSION = 2;          // 2: bit 512 (original fog) added, on for remembered settings too
 const bitBoxes = [...document.querySelectorAll('input[data-bit]')];
 let hdSet = null;                                           // Int32Array: [0] bits, [1] version

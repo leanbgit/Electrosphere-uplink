@@ -53,6 +53,11 @@ static void ovl_trace(u32 caller, u32 target) {
 
 extern int ac3_disc_scene_query(ctx_t *ctx, u32 target);
 
+/* The interpreter runs each called function with r31 set to a sentinel, so
+ * code that asks "who called me?" (the widescreen view widening in gte.c)
+ * reads the guest's real return address from here instead. */
+u32 ac3_guest_ra;
+
 static void call_at(ctx_t *ctx, u32 target) {
     ovl_trace(ac3_interp_pc, target);
     ac3_probe_overlay_call(ctx, target);
@@ -288,6 +293,7 @@ static void interp_run(ctx_t *ctx, u32 pc, u32 entry) {
                 interp_setjmp_then_run(ctx, pc + 8, entry);
                 return;                      /* the guest function has returned */
             }
+            ac3_guest_ra = pc + 8;           /* the return address the guest would see */
             call_at(ctx, x.target);
             pc += 8;
             continue;

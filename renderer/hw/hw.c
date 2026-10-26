@@ -714,6 +714,25 @@ void hw_poly(const gpu_sw_state_t *st, const gpu_poly_t *p, const hw_pv_t pv[4])
     u32 info[4];
     prim_info(info, textured, raw, !p->gouraud, p->tpage, p->clut, p->twin_mask,
               p->twin_off, st);
+    if (textured) {
+        /* The console never samples a polygon's largest u or v (its right and
+         * bottom edges are left out), but at a higher resolution the edge
+         * pixels can land on it and pick up the neighbouring texture: thin
+         * seams between tiles (the Geofront ceiling). Clamp to the texels the
+         * console would use; the shader reads the limits from the upper
+         * halves of info[0] and info[1] (bit 15 of info[0] marks them). */
+        u32 umin = p->u[0], umax = p->u[0], vmin = p->v[0], vmax = p->v[0];
+        for (int i = 1; i < n; i++) {
+            if (p->u[i] < umin) umin = p->u[i];
+            if (p->u[i] > umax) umax = p->u[i];
+            if (p->v[i] < vmin) vmin = p->v[i];
+            if (p->v[i] > vmax) vmax = p->v[i];
+        }
+        if (umax > umin) umax--;
+        if (vmax > vmin) vmax--;
+        info[0] = (info[0] & 0x7FFFu) | 0x8000u | (umin << 16) | (umax << 24);
+        info[1] = (info[1] & 0xFFFFu) | (vmin << 16) | (vmax << 24);
+    }
 
     s32 ix[4], iy[4];
     float fx[4], fy[4], fz[4];

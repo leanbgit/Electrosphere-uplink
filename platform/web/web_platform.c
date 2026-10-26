@@ -130,6 +130,7 @@ static void hd_skip_frame(const gpu_display_t *d0) {
 
 static int hd_init(void) {
     if (!web_hd_wanted()) return 0;
+    ac3_hd.forest = 0;    /* no forest in the web version (see hd_apply_settings) */
     hw_config_t cfg = { ac3_hd.scale, ac3_hd.perspective };
     hw_init_cpu(&cfg);
     hw_glue_attach();
@@ -149,7 +150,7 @@ static void hd_apply_settings(void) {
     ac3_hd.far_terrain = (b & 4) != 0;
     ac3_hd.ocean      = (b & 8) != 0;
     ac3_hd.clouds     = (b & 16) != 0;
-    ac3_hd.forest     = (b & 32) != 0;
+    ac3_hd.forest     = 0;   /* removed from the web version: trees appeared on any ground (bit 32 unused) */
     ac3_hd.atmosphere = (b & 64) != 0;
     ac3_hd.gi         = (b & 128) != 0;
     ac3_hd.sun        = (b & 256) != 0;
