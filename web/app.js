@@ -305,8 +305,9 @@ const gfxPref = { get() { try { return JSON.parse(localStorage.getItem('ac3.gfx'
 // Widescreen and the world effects are one bit each (same bits as
 // platform/web/web_platform.c, hd_apply_settings). They change live: the page
 // writes them into a small shared buffer that the game reads every field.
-const GFX_DEFAULT = 1 | 2 | 4 | 16 | 64 | 128 | 256 | 512;   // everything but the animated ocean (bit 32, forests, was removed)
-const GFX_VERSION = 2;          // 2: bit 512 (original fog) added, on for remembered settings too
+const GFX_DEFAULT = 1 | 2 | 128 | 256 | 512;   // widescreen, effects, sky lighting, sun, original fog (atmosphere, far terrain, clouds and ocean off; bit 32, forests, was removed)
+const GFX_VERSION = 3;          // 2: bit 512 (original fog) added, on for remembered settings too
+                                // 3: atmosphere (64), far terrain (4) and clouds (16) off by default, also for remembered settings
 const bitBoxes = [...document.querySelectorAll('input[data-bit]')];
 let hdSet = null;                                           // Int32Array: [0] bits, [1] version
 function gfxBits() { let b = 0; for (const x of bitBoxes) if (x.checked) b |= +x.dataset.bit; return b; }
@@ -330,7 +331,7 @@ function applyLive() {
 {
   const g = gfxPref.get();
   $('gfx').value = self.navigator.gpu ? String(g.scale ?? 0) : '0';
-  showGfxBits(g.bits !== undefined ? (g.v >= GFX_VERSION ? g.bits : g.bits | 512)
+  showGfxBits(g.bits !== undefined ? (g.v >= GFX_VERSION ? g.bits : (g.v >= 2 ? g.bits : g.bits | 512) & ~(4 | 16 | 64))
                                     : (GFX_DEFAULT & ~(g.wide === false ? 1 : 0) | (g.ocean ? 8 : 0)));
   if (!self.navigator.gpu) {
     for (const o of $('gfx').options) if (o.value !== '0') o.disabled = true;
