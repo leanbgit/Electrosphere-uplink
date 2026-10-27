@@ -4,6 +4,8 @@
 in English with an optional enhanced renderer: up to 6× resolution, widescreen, a draw distance to the horizon,
 atmosphere, volumetric clouds, forests and an animated ocean.
 
+You can play it yourself right now <a href="https://ac3uplink.com/"> here </a>
+
 The game's own program runs on a recreation
 of the PlayStation's system libraries, compiled to WebAssembly, and the
 enhanced picture is drawn with WebGPU.
