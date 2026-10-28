@@ -43,7 +43,9 @@ GTE's depth cueing (`ac3_gte_no_depthcue`). The game sees these values.
    (`SpuGetKeyStatus`), which advances with mixing. Replays avoid this by
    mixing a fixed amount per field (`ac3_oracle_deterministic()`). Co-op must
    do the same and absorb device clock drift in the audio output instead.
-   *Still to measure:* how often the game reads voice status in flight.
+   **Measured:** the game calls `SpuGetAllKeysStatus` (0x800A180C, from
+   0x8002E3DC) once per game frame, menus and flight alike (7,704 calls in
+   the first 9,600 fields), so this matters.
 3. The game often runs at 30 frames per second in flight (two fields per game
    frame). Input is still exchanged per field; that's simplest and costs
    nothing extra.
@@ -55,5 +57,5 @@ GTE's depth cueing (`ac3_gte_no_depthcue`). The game sees these values.
       the plan is to run the browser files under Node next to the discs (the
       existing `platform/web/run_worker_node.js`) with a hash log.
 - [ ] Full 48,469-field recording, and the Geofront recording.
-- [ ] Count `SpuGetKeyStatus` / `SpuGetAllKeysStatus` calls in flight.
+- [x] Count voice-status reads: once per game frame (see above).
 - [ ] Fixed-rate audio mode for the web build.
