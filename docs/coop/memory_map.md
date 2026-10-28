@@ -57,7 +57,9 @@ the code that *chooses* targets, which may still prefer slot 0.
 1. `0x80026E84` reads both ports every frame and decodes each into a
    controller record (`0x80026BA4`): records at `0x800C045C + 0x10·n`, with
    their state at **0x800BF320** (port 1) and **0x800BF388** (port 2).
-   **The game already decodes port 2 every frame.** (measured)
+   **The game polls port 2 every frame and keeps a record for it** (measured;
+   no second controller was connected in the recording, so the decoding of a
+   live port 2 is still to confirm with a two-controller recording).
 2. `0x80028C24(controller, map, …)` turns port 1's state into the game's
    **input map at 0x800BF3F0** (applies the button configuration). It is the
    only reader of the controller state in flight. (measured)
