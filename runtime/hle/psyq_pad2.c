@@ -93,6 +93,10 @@ void psyq_DisablePAD(ctx_t *ctx) { com_enabled = 0; RET(0); }
 #define LIBPAD_PORT_STRIDE    240u
 #define LIBPAD_BUF_OFFSET     48u
 
+static u32 direct_buffer(int port);
+#ifdef AC3_COOP_PROBE
+u32 ac3_coop_pad_buffer(int port) { return direct_buffer(port); }
+#endif
 static u32 direct_buffer(int port) {
     if (direct_buf[port]) return direct_buf[port];
     u32 ports = MEM_R32(LIBPAD_PORT_ARRAY_PTR);

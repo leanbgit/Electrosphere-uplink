@@ -132,8 +132,10 @@ static void field_hash(u32 f) {
 
 static void field_ents(u32 f) {
     u32 slots = MEM_R32(GAME_GP + 744);
-    fprintf(P.ents, "== field %u  slots 0x%08X  world 0x%08X  scene 0x%08X  view 0x%08X\n",
-            f, slots, MEM_R32(GAME_GP + 736), MEM_R32(GAME_GP + 748), MEM_R32(GAME_GP + 752));
+    extern u32 ac3_coop_pad_buffer(int port);
+    fprintf(P.ents, "== field %u  slots 0x%08X  world 0x%08X  scene 0x%08X  pad1 0x%08X  pad2 0x%08X\n",
+            f, slots, MEM_R32(GAME_GP + 736), MEM_R32(GAME_GP + 748),
+            ac3_coop_pad_buffer(0), ac3_coop_pad_buffer(1));
     if ((slots >> 24) != 0x80u) return;
     for (u32 i = 0; i < 64; i++) {
         u32 e = MEM_R32(slots + 4 * i);
