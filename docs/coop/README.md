@@ -6,6 +6,7 @@ the project's `COOP_ROADMAP.md`; findings so far:
 - [memory_map.md](memory_map.md): what is known about the game's player, entities and controllers
 - [S1_determinism.md](S1_determinism.md): spike S1, can two browsers stay in step
 - [S2_guest.md](S2_guest.md): spike S2, a second aircraft flown from controller port 2
+- [S3_view.md](S3_view.md): spike S3, the guest's own view
 
 ## The headless bench
 
@@ -37,7 +38,7 @@ hash log, and whatever the options ask for.
 
 | Option | Writes |
 |---|---|
-| `--coop-hash FILE` | per field: scene ids and hashes of RAM, scratchpad, VRAM, SPU state |
+| `--coop-hash FILE` | per field: scene ids and hashes of RAM, scratchpad, VRAM, SPU state, and "sim" (RAM without the two picture buffers) |
 | `--coop-ents FROM-TO[:N] FILE` | entity slot table every N fields (decode with `tools/coop/ents.py`) |
 | `--coop-ram F1,F2,... DIR` | full RAM + scratchpad images (compare with `tools/coop/ramdiff.py`) |
 | `--coop-wlog ADDR LEN FROM-TO FILE` | every guest write into the range: field, pc, last call's return address, value |
@@ -45,8 +46,10 @@ hash log, and whatever the options ask for.
 | `--coop-calls FROM-TO FILE` | every guest function entered |
 | `--coop-args F1,F2,... FROM-TO FILE` | a0–a3 and sp at each call of those functions |
 | `--coop-wfn FUNC FROM-TO FILE` | every write (outside the stack) made while FUNC and its callees run |
+| `--coop-rfn FUNC FROM-TO FILE` | the same for reads |
 | `--coop-p2 REC` | second controller taken from another recording's port 2 (make one with `tools/coop/make_p2.py`) |
 | `--coop-guest` | the co-op guest aircraft (`runtime/hle/coop.c`, see S2_guest.md) |
+| `--coop-view` | with `--coop-guest`: draw the guest's view (S3_view.md); screenshots show it |
 
 Field windows: the game often runs at 30 frames per second in flight (it waits
 two fields per frame), so a one-field window can contain no game code at all.

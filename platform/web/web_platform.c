@@ -25,6 +25,7 @@
 #endif
 #include "ac3_english.h"
 #include "ac3_capture.h"
+#include "coop.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -219,9 +220,11 @@ static void web_shutdown(void) {
 static void convert_display(const gpu_display_t *d) {
     int w = d->w, h = d->h;
     u8 *o = rgba;
+    /* co-op, guest's computer: its own picture (runtime/hle/coop.c); otherwise ac3_vram */
+    const u16 *vram = ac3_coop_display_vram(ac3_vram);
     for (int y = 0; y < h; y++) {
         int vy = (d->y + y) & 511;
-        const u16 *row = ac3_vram + vy * GPU_VRAM_W;
+        const u16 *row = vram + vy * GPU_VRAM_W;
         if (d->rgb24) {
             for (int x = 0; x < w; x++) {
                 int b = x * 3, wx = d->x + (b >> 1);

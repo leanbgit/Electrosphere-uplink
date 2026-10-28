@@ -57,6 +57,7 @@ static struct {
     FILE *p2; int p2_done;
     u32 fn[16]; int nfn; u32 fn_lo, fn_hi; FILE *fnlog;
     u32 wfn; u32 wfn_lo, wfn_hi; FILE *wfnlog; int wfn_depth; u32 wfn_saved_lo, wfn_saved_hi;
+    u32 rfn; u32 rfn_lo, rfn_hi; FILE *rfnlog; int rfn_depth; u32 rfn_saved_lo, rfn_saved_hi;
 } P;
 static u32 w_addr_lo, w_addr_hi;
 u32 ac3_coop_r_lo, ac3_coop_r_hi;
@@ -67,7 +68,7 @@ int ac3_coop_probe_arg(int argc, char **argv, int *j) {
     int left = argc - *j - 1;
     if (!strcmp(a, "--coop-hash") && left >= 1) {
         P.hash = open_w(argv[++*j]);
-        if (P.hash) fprintf(P.hash, "field\tgroup\tphase\tmission\tram\tscratch\tvram\tspu\n");
+        if (P.hash) fprintf(P.hash, "field\tgroup\tphase\tmission\tram\tscratch\tvram\tspu\tsim\n");
         return 1;
     }
     if (!strcmp(a, "--coop-ents") && left >= 2) {
@@ -117,6 +118,18 @@ int ac3_coop_probe_arg(int argc, char **argv, int *j) {
         ac3_coop_guest = 1;
         return 1;
     }
+    if (!strcmp(a, "--coop-view")) {
+        extern int ac3_coop_view;
+        ac3_coop_view = 1;
+        return 1;
+    }
+    if (!strcmp(a, "--coop-rfn") && left >= 3) {
+        P.rfn = (u32)strtoul(argv[*j + 1], NULL, 0);
+        range(argv[*j + 2], &P.rfn_lo, &P.rfn_hi, NULL);
+        P.rfnlog = open_w(argv[*j + 3]);
+        if (P.rfnlog) fprintf(P.rfnlog, "field\tpc\tcaller\taddr\tsize\tvalue\n");
+        *j += 3; return 1;
+    }
     if (!strcmp(a, "--coop-wfn") && left >= 3) {
         P.wfn = (u32)strtoul(argv[*j + 1], NULL, 0);
         range(argv[*j + 2], &P.wfn_lo, &P.wfn_hi, NULL);
@@ -138,18 +151,36 @@ int ac3_coop_probe_arg(int argc, char **argv, int *j) {
 
 extern void ac3_spu_state_hash(u64 *h);   /* psyq_spu.c (probe builds) */
 
+/* RAM without the two picture buffers (OT + drawing packets), which the
+ * guest's view legitimately changes: what the two computers must agree on. */
+static u64 sim_hash(void) {
+    u32 w = MEM_R32(GAME_GP + 0x2E0u);
+    u32 lo = 0, hi = 0;
+    if ((w >> 24) == 0x80u && (w & 0x1FFFFFu) < AC3_RAM_SIZE - 0x40u) {
+        u32 ot0 = MEM_R32(w + 0x18u), ot1 = MEM_R32(w + 0x1Cu), pk0 = MEM_R32(w + 0x20u), pk1 = MEM_R32(w + 0x24u);
+        if (ot0 < ot1 && pk0 < ot1 && pk1 > ot1 && (ot0 >> 24) == 0x80u) {
+            lo = ot0 & AC3_RAM_MASK;
+            hi = (pk1 + (ot1 - pk0)) & AC3_RAM_MASK;
+            if (hi <= lo || hi > AC3_RAM_SIZE) lo = hi = 0;
+        }
+    }
+    u64 h = hash64(ac3_ram, lo ? lo : AC3_RAM_SIZE);
+    if (lo) h ^= hash64(ac3_ram + hi, AC3_RAM_SIZE - hi) * 31u;
+    return h;
+}
+
 static void field_hash(u32 f) {
     u32 scene = MEM_R32(GAME_GP + 748);
     int ok = (scene >> 24) == 0x80u && (scene & 0x1FFFFFu) < AC3_RAM_SIZE - 1024;
     u64 spu = 0;
     ac3_spu_state_hash(&spu);
-    fprintf(P.hash, "%u\t%d\t%d\t%d\t%016llx\t%016llx\t%016llx\t%016llx\n", f,
+    fprintf(P.hash, "%u\t%d\t%d\t%d\t%016llx\t%016llx\t%016llx\t%016llx\t%016llx\n", f,
             ok ? (int)MEM_R32(scene + 44) : -1, ok ? (int)MEM_R32(scene + 48) : -1,
             ok ? (int)MEM_R16S(scene + 908) : -1,
             (unsigned long long)hash64(ac3_ram, AC3_RAM_SIZE),
             (unsigned long long)hash64(ac3_scratch, 1024),
             (unsigned long long)(ac3_vram ? hash64(ac3_vram, 1024 * 512 * 2) : 0),
-            (unsigned long long)spu);
+            (unsigned long long)spu, (unsigned long long)sim_hash());
 }
 
 static void field_ents(u32 f) {
@@ -220,6 +251,15 @@ void ac3_coop_probe_field(void) {
 /* --coop-wfn: while FUNC (and everything it calls) runs, every write outside
  * the stack is logged. */
 int ac3_coop_wfn_begin(u32 target) {
+    if (P.rfnlog && target == P.rfn && !P.rfn_depth) {
+        u32 f = ac3_vblank_count();
+        if (f >= P.rfn_lo && f <= P.rfn_hi) {
+            P.rfn_depth = 1;
+            P.rfn_saved_lo = ac3_coop_r_lo; P.rfn_saved_hi = ac3_coop_r_hi;
+            ac3_coop_r_lo = 0x80000000u; ac3_coop_r_hi = 0x801F0000u;
+            return 2;
+        }
+    }
     if (!P.wfnlog || target != P.wfn || P.wfn_depth) return 0;
     u32 f = ac3_vblank_count();
     if (f < P.wfn_lo || f > P.wfn_hi) return 0;
@@ -229,6 +269,11 @@ int ac3_coop_wfn_begin(u32 target) {
     return 1;
 }
 void ac3_coop_wfn_end(void) {
+    if (P.rfn_depth) {
+        P.rfn_depth = 0;
+        ac3_coop_r_lo = P.rfn_saved_lo; ac3_coop_r_hi = P.rfn_saved_hi;
+        return;
+    }
     P.wfn_depth = 0;
     ac3_watch_lo = P.wfn_saved_lo; ac3_watch_hi = P.wfn_saved_hi;
 }
@@ -245,8 +290,13 @@ void ac3_coop_write_hit(u32 addr, u32 value, int size) {
 }
 
 void ac3_coop_read_hit(u32 addr, int size) {
-    if (!P.rlog) return;
     u32 v = size == 4 ? MEM_R32(addr) : size == 2 ? MEM_R16U(addr) : MEM_R8U(addr);
+    if (P.rfn_depth && P.rfnlog) {
+        fprintf(P.rfnlog, "%u\t%08X\t%08X\t%08X\t%d\t%08X\n", ac3_vblank_count(),
+                ac3_interp_pc, ac3_guest_ra, addr, size, v);
+        return;
+    }
+    if (!P.rlog) return;
     fprintf(P.rlog, "%u\t%08X\t%08X\t%08X\t%d\t%08X\n", ac3_vblank_count(),
             ac3_interp_pc, ac3_guest_ra, addr, size, v);
 }
@@ -268,8 +318,22 @@ void ac3_coop_call(u32 target) {
     fprintf(P.calls, "%u\t%08X\t%08X\n", f, target, ac3_guest_ra);
 }
 
+/* library (HLE) functions called while the guest's view is replayed */
+static struct { u32 fn, n; } replay_hle[64];
+void ac3_coop_replay_hle(u32 target) {
+    for (int i = 0; i < 64; i++) {
+        if (replay_hle[i].fn == target) { replay_hle[i].n++; return; }
+        if (!replay_hle[i].fn) { replay_hle[i].fn = target; replay_hle[i].n = 1; return; }
+    }
+}
+
 void ac3_coop_probe_finish(void) {
-    FILE *all[] = { P.hash, P.ents, P.wlog, P.rlog, P.calls, P.p2, P.fnlog, P.wfnlog };
+    if (replay_hle[0].fn) {
+        printf("coop: library calls during guest-view replays:");
+        for (int i = 0; i < 64 && replay_hle[i].fn; i++) printf(" %08X x%u", replay_hle[i].fn, replay_hle[i].n);
+        printf("\n");
+    }
+    FILE *all[] = { P.hash, P.ents, P.wlog, P.rlog, P.calls, P.p2, P.fnlog, P.wfnlog, P.rfnlog };
     for (unsigned i = 0; i < sizeof all / sizeof all[0]; i++) if (all[i]) fclose(all[i]);
     memset(&P, 0, sizeof P);
 }

@@ -90,6 +90,9 @@ static void call_dispatch(ctx_t *ctx, u32 target) {
     if (ac3_disc_scene_query(ctx, target)) return;
     ac3_func_t f = ac3_lookup(target);
     if (f) {
+#ifdef AC3_COOP_PROBE
+        if (ac3_coop_replaying()) ac3_coop_replay_hle(target);
+#endif
         f(ctx);
         return;
     }
@@ -236,7 +239,7 @@ u32 ac3_interp_pc;
 u32 ac3_interp_step_budget;
 int ac3_interp_budget_hit;
 
-static void interp_run(ctx_t *ctx, u32 pc, u32 entry);
+static void interp_run(ctx_t *ctx, u32 pc, u32 entry, u32 stop);
 
 /* Address of the game's setjmp (the Psy-Q function replaced by psyq_setjmp),
  * found once in the dispatch table; 1 (never a valid target) if absent. */
@@ -271,7 +274,7 @@ static void interp_setjmp_then_run(ctx_t *ctx, u32 resume_pc, u32 entry) {
     } else {
         pc = ctx->r[31];
     }
-    interp_run(ctx, pc, entry);
+    interp_run(ctx, pc, entry, 0);
 }
 
 void ac3_interpret(ctx_t *ctx, u32 entry) {
@@ -279,15 +282,26 @@ void ac3_interpret(ctx_t *ctx, u32 entry) {
     u32 outer_pc = ac3_interp_pc;
     ctx->r[31] = INTERP_SENTINEL;
     ac3_interp_budget_hit = 0;
-    interp_run(ctx, entry, entry);
+    interp_run(ctx, entry, entry, 0);
     ctx->r[31] = saved_ra;
     ac3_interp_pc = outer_pc;
 }
 
 /* Runs guest code from pc until the function entered at `entry` returns
  * (jr to the sentinel), or it tail-jumps into the BIOS or a native function. */
-static void interp_run(ctx_t *ctx, u32 pc, u32 entry) {
+/* Runs guest code from `pc` until execution reaches `stop` in this same
+ * function (calls made on the way run normally). For the co-op guest's view,
+ * which replays part of a frame (runtime/hle/coop.c). The caller must make
+ * sure `stop` is reached without returning from the function. */
+void ac3_interpret_until(ctx_t *ctx, u32 pc, u32 stop) {
+    u32 outer_pc = ac3_interp_pc;
+    interp_run(ctx, pc, pc, stop);
+    ac3_interp_pc = outer_pc;
+}
+
+static void interp_run(ctx_t *ctx, u32 pc, u32 entry, u32 stop) {
     for (u64 steps = 0; steps < MAX_STEPS; steps++) {
+        if (stop && pc == stop) return;
         if (ac3_interp_step_budget && steps >= ac3_interp_step_budget) {
             ac3_interp_budget_hit = 1;
             return;

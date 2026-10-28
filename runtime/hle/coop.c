@@ -1,11 +1,13 @@
 /* coop.c -- see coop.h. Addresses are for the Rev 1 ACE3.BIN; the reasoning
  * behind each one is in docs/coop/memory_map.md. */
 #include "coop.h"
+#include "gpu_backend.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 int ac3_coop_guest;
+int ac3_coop_view;
 static int coop_debug = -1;
 
 extern void ac3_interpret(ctx_t *ctx, u32 entry);
@@ -18,6 +20,10 @@ extern u32 ac3_vblank_count(void);
 #define CTRL_PORT2     0x800BF388u         /* the game's decoded record for controller port 2 */
 #define SLOT_SIZE      0x58u               /* slots 0 and 1 */
 #define LIVE           0x10000u            /* handle bit: slot in use */
+#define WORLD_PTR      (GAME_GP + 0x2E0u)  /* world/view state */
+#define AFTER_TICK     0x80033A8Cu         /* flight frame: just after it called the tick (by pointer) */
+#define DRAW_LAST_FN   0x80033814u         /* flight frame: last drawing call ... */
+#define DRAW_LAST_RA   0x80033DA8u
 
 /* Per-player memory: the guest has its own copy, exchanged with the host's
  * around the guest's update. */
@@ -36,6 +42,15 @@ static const struct { u32 addr, len; } host_only[] = {
 };
 #define N_HOST_ONLY (sizeof host_only / sizeof host_only[0])
 
+/* World-structure ranges only the camera and view setup write (relative to
+ * the world pointer): the guest's view keeps its own copy between frames. */
+static const struct { u32 off, len; } view_private[] = {
+    { 0x2Cu, 0x34u },    /* 0x800332E4: view setup */
+    { 0xB8u, 0x50u },    /* 0x8007B438: camera */
+    { 0x154u, 0x20u },   /* 0x8007B438: camera */
+};
+#define N_VIEW_PRIVATE (sizeof view_private / sizeof view_private[0])
+
 static struct {
     int live;              /* guest aircraft exists in this flight */
     u32 handle;            /* its handle (slot 1) */
@@ -43,6 +58,15 @@ static struct {
     u32 created_field, updates;
     u8  mine[N_PER_PLAYER][0x100];   /* the guest's copy of each per-player range */
     u8  keep[N_HOST_ONLY][0x40];
+    /* the guest's view (S3) */
+    int view_on, cam_valid;
+    u8  cam[N_VIEW_PRIVATE][0x50];
+    u8 *snap_ram, *keep_buf;
+    u8  snap_scratch[1024];
+    ctx_t snap_ctx;
+    u32 snap_pc;
+    int replaying;
+    u32 views;
 } G;
 
 static void copy_out(u32 addr, u8 *dst, u32 n) { for (u32 i = 0; i < n; i++) dst[i] = (u8)MEM_R8U(addr + i); }
@@ -134,17 +158,248 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     G.updates++;
 }
 
+/* ---- the guest's view (spike S3) -------------------------------------------
+ * On the guest's computer the frame's camera + drawing part runs with the
+ * guest swapped in. Before it, RAM, scratchpad and the GTE are saved; after
+ * it, everything is put back except the picture buffer the frame drew into
+ * (the GPU draws it at the start of the next frame). The simulation therefore
+ * stays identical to the host's; only the picture differs. */
+extern u32 ac3_guest_ra;
+extern u8 *ac3_scratch;
+
+static int draw_buffer(u32 *lo, u32 *hi) {
+    u32 w = MEM_R32(WORLD_PTR);
+    if (!ram_ptr(w)) return 0;
+    u32 ot = MEM_R32(w + 0x10u), ot0 = MEM_R32(w + 0x18u), ot1 = MEM_R32(w + 0x1Cu);
+    u32 pk0 = MEM_R32(w + 0x20u), pk1 = MEM_R32(w + 0x24u);
+    if (!ram_ptr(ot0) || !ram_ptr(ot1) || !ram_ptr(pk0) || !ram_ptr(pk1) || ot1 <= pk0) return 0;
+    u32 pk_size = ot1 - pk0;                 /* the two buffers sit back to back */
+    if (ot == ot0) { *lo = ot0; *hi = pk0 + pk_size; }
+    else if (ot == ot1) { *lo = ot1; *hi = pk1 + pk_size; }
+    else return 0;
+    return *hi > *lo && ((*hi - 0x80000000u) <= AC3_RAM_SIZE) && *hi - *lo <= 0x40000u;
+}
+
+extern void ac3_interpret_until(ctx_t *ctx, u32 pc, u32 stop);
+
+/* Drawing packets the guest's picture uses outside its buffer (the HUD keeps
+ * its own): found by walking the ordering table like the GPU will, copied
+ * out before the host's memory is put back and copied in afterwards. */
+#define MAX_EXTRA_BYTES 0x20000u
+static struct { u32 addr, len; } extra[4096];
+static unsigned n_extra;
+static u8 extra_bytes[MAX_EXTRA_BYTES];
+
+static void collect_packets(u32 lo, u32 hi, u32 ot_base, u32 ot_entries) {
+    n_extra = 0;
+    u32 used = 0, steps = 0;
+    u32 a = ot_base + (ot_entries - 1u) * 4u;          /* ClearOTagR: drawn from the last entry */
+    while (steps++ < 400000u) {
+        if ((a >> 24) != 0x80u || (a & AC3_RAM_MASK) + 4u > AC3_RAM_SIZE) break;
+        u32 word = MEM_R32(a), len = (word >> 24) * 4u + 4u;
+        if ((a < lo || a >= hi) && n_extra < sizeof extra / sizeof extra[0] && used + len <= MAX_EXTRA_BYTES) {
+            extra[n_extra].addr = a;
+            extra[n_extra].len = len;
+            memcpy(extra_bytes + used, ac3_ram + (a & AC3_RAM_MASK), len);
+            used += len;
+            n_extra++;
+        }
+        if ((word & 0xFFFFFFu) == 0xFFFFFFu) break;    /* end of the list */
+        a = 0x80000000u | (word & 0xFFFFFFu);
+    }
+}
+
+/* The guest's picture never enters the game's memory: it is laid over it
+ * only while the GPU reads the frame (DrawOTag at the start of the next
+ * frame), then the game's own bytes are put back. So both computers' game
+ * memory stays byte-identical; only what reaches the screen differs. */
+static struct { int ready, active; u32 lo, hi; } OV;
+static u8 extra_backup[MAX_EXTRA_BYTES];
+static u8 *ov_backup;
+
+static void apply_overlay(void) {
+    u8 *ram = ac3_ram;
+    memcpy(ov_backup, ram + (OV.lo & AC3_RAM_MASK), OV.hi - OV.lo);
+    memcpy(ram + (OV.lo & AC3_RAM_MASK), G.keep_buf, OV.hi - OV.lo);
+    u32 used = 0;
+    for (unsigned i = 0; i < n_extra; i++) {
+        u8 *at = ram + (extra[i].addr & AC3_RAM_MASK);
+        memcpy(extra_backup + used, at, extra[i].len);
+        memcpy(at, extra_bytes + used, extra[i].len);
+        used += extra[i].len;
+    }
+}
+
+int ac3_coop_gpu_ready(void) { return ac3_coop_view && OV.ready && ov_backup; }
+
+int ac3_coop_gpu_draw(int begin) {
+    if (begin) {
+        if (!ac3_coop_view || !OV.ready || !ov_backup) return 0;
+        apply_overlay();
+        OV.active = 1;
+        return 1;
+    } else if (OV.active) {
+        /* in reverse order, so overlapping packets come back right */
+        u32 used = 0;
+        for (unsigned i = 0; i < n_extra; i++) used += extra[i].len;
+        for (unsigned i = n_extra; i-- > 0; ) {
+            used -= extra[i].len;
+            memcpy(ac3_ram + (extra[i].addr & AC3_RAM_MASK), extra_backup + used, extra[i].len);
+        }
+        memcpy(ac3_ram + (OV.lo & AC3_RAM_MASK), ov_backup, OV.hi - OV.lo);
+        OV.active = 0;
+        OV.ready = 0;
+    }
+    return 0;
+}
+
+/* The guest's computer keeps two video memories. The game's own (ac3_vram)
+ * receives exactly the host's picture, so whatever the game reads back from
+ * the screen is the same on both computers. The display copy receives the
+ * guest's picture and is what gets shown. */
+static u16 *disp_vram;
+static u32 disp_field;
+#define VRAM_BYTES (1024u * 512u * 2u)
+
+u16 *ac3_coop_display_pass(const u16 *game_vram) {
+    int fresh = disp_vram != NULL && ac3_vblank_count() - disp_field <= 4u;
+    if (!disp_vram) disp_vram = (u16 *)malloc(VRAM_BYTES);
+    if (!disp_vram) return NULL;
+    /* Bring textures and everything else up to date from the game's VRAM,
+     * except the picture on screen right now: the game double-buffers, so
+     * that is the guest's previous picture (this pass draws the other one). */
+    gpu_display_t d;
+    gpu_display_state(&d);
+    int keep = fresh && d.enabled && d.w > 0 && d.h > 0;
+    if (d.w > 1024) d.w = 1024;
+    if (d.h > 512) d.h = 512;
+    for (int y = 0; y < 512; y++) {
+        u16 *dst = disp_vram + y * 1024;
+        const u16 *src = game_vram + y * 1024;
+        int in_rows = keep && ((y - d.y) & 511) < d.h;
+        if (!in_rows) { memcpy(dst, src, 1024 * 2); continue; }
+        int x0 = d.x & 1023, w = d.rgb24 ? (d.w * 3 + 1) / 2 : d.w;
+        for (int x = 0; x < 1024; x++)
+            if (((x - x0) & 1023) >= w) dst[x] = src[x];
+    }
+    disp_field = ac3_vblank_count();
+    if (coop_debug > 0 && G.views < 4) printf("coop: guest picture drawn into the display VRAM at field %u\n", disp_field);
+    return disp_vram;
+}
+
+u16 *ac3_coop_display_vram(u16 *game_vram) {
+    /* the guest's picture is shown while it is fresh (the game draws one
+     * picture per 1 or 2 fields); otherwise the game's own */
+    if (disp_vram && ac3_coop_view && ac3_vblank_count() - disp_field <= 2u) return disp_vram;
+    return game_vram;
+}
+
+/* Right after the player update (host and guest done): remember registers
+ * and RAM. The rest of the frame (world, HUD preparation, camera, drawing)
+ * runs normally for the host; the guest's view replays it from here. */
+static void view_mark(ctx_t *ctx, u32 resume_pc) {
+    G.view_on = 0;
+    if (!G.live) return;
+    if (!G.snap_ram) G.snap_ram = (u8 *)malloc(AC3_RAM_SIZE);
+    if (!G.snap_ram) return;
+    memcpy(G.snap_ram, ac3_ram, AC3_RAM_SIZE);
+    memcpy(G.snap_scratch, ac3_scratch, sizeof G.snap_scratch);
+    G.snap_ctx = *ctx;
+    G.snap_pc = resume_pc;
+    G.view_on = 1;
+}
+
+/* After the host's last drawing call: the frame's memory is now exactly the
+ * host's. Replay the rest of the frame for the guest from the saved state
+ * (the tick after the player update, camera, drawing), keep the picture it
+ * drew, then put the host's memory back. */
+static void view_replay(ctx_t *ctx) {
+    if (!G.view_on) return;
+    G.view_on = 0;
+    u32 lo = 0, hi = 0;
+    if (!draw_buffer(&lo, &hi)) return;
+    static u8 *host_ram;
+    static u8 host_scratch[1024];
+    if (!host_ram) host_ram = (u8 *)malloc(AC3_RAM_SIZE);
+    if (!G.keep_buf) G.keep_buf = (u8 *)malloc(0x40000u);
+    if (!host_ram || !G.keep_buf) return;
+    memcpy(host_ram, ac3_ram, AC3_RAM_SIZE);
+    memcpy(host_scratch, ac3_scratch, sizeof host_scratch);
+    ctx_t host_ctx = *ctx;
+
+    /* back to just after the player update, with the guest swapped in */
+    memcpy(ac3_ram, G.snap_ram, AC3_RAM_SIZE);
+    memcpy(ac3_scratch, G.snap_scratch, sizeof G.snap_scratch);
+    *ctx = G.snap_ctx;
+    u32 slots = MEM_R32(SLOT_TABLE), w = MEM_R32(WORLD_PTR);
+    for (unsigned i = 0; i < N_PER_PLAYER; i++) copy_in(per_player[i].addr, G.mine[i], per_player[i].len);
+    u32 host = MEM_R32(slots), mine = MEM_R32(slots + 4);
+    MEM_W32(slots, mine);
+    MEM_W32(slots + 4, host);
+    if (G.cam_valid)
+        for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_in(w + view_private[i].off, G.cam[i], view_private[i].len);
+    /* The camera follows "the player" through pointers into the host's entity
+     * (world+0xEC -> its position): point them at the guest's entity. */
+    for (unsigned i = 0; i < N_VIEW_PRIVATE; i++)
+        for (u32 o = 0; o + 4 <= view_private[i].len; o += 4) {
+            u32 a = w + view_private[i].off + o, v = MEM_R32(a);
+            if (v >= host && v < host + SLOT_SIZE) MEM_W32(a, mine + (v - host));
+        }
+
+    /* the rest of the tick (it returns to the interpreter's sentinel, because
+     * the flight frame calls it through a pointer), then the flight frame
+     * from just after that call to the end of drawing */
+    G.replaying = 1;
+    ac3_interpret_until(ctx, G.snap_pc, 0);
+    ctx->r[31] = AFTER_TICK;
+    ac3_interpret_until(ctx, AFTER_TICK, DRAW_LAST_RA);
+    G.replaying = 0;
+
+    for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_out(w + view_private[i].off, G.cam[i], view_private[i].len);
+    G.cam_valid = 1;
+    u32 glo = 0, ghi = 0;
+    int same = draw_buffer(&glo, &ghi) && glo == lo && ghi == hi;
+    if (same) {
+        memcpy(G.keep_buf, ac3_ram + (lo & AC3_RAM_MASK), hi - lo);
+        u32 w2 = MEM_R32(WORLD_PTR), ot0 = MEM_R32(w2 + 0x18u), pk0 = MEM_R32(w2 + 0x20u);
+        collect_packets(lo, hi, lo, (pk0 - ot0) / 4u);   /* both buffers have the same OT size */
+    }
+
+    /* the host's memory and registers again, with the guest's picture */
+    memcpy(ac3_ram, host_ram, AC3_RAM_SIZE);
+    memcpy(ac3_scratch, host_scratch, sizeof host_scratch);
+    *ctx = host_ctx;
+    if (!ov_backup) ov_backup = (u8 *)malloc(0x40000u);
+    OV.ready = same && ov_backup;
+    OV.lo = lo; OV.hi = hi;
+    if (coop_debug > 0 && G.views < 3)
+        printf("coop: guest view drawn at field %u (buffer %08X..%08X%s, %u packets outside it)\n",
+               ac3_vblank_count(), lo, hi, same ? "" : ", NOT kept", n_extra);
+    G.views++;
+}
+
+int ac3_coop_replaying(void) { return G.replaying; }
+
 int ac3_coop_intercept(ctx_t *ctx, u32 target) {
-    if (target != PLAYER_UPDATE) return 0;
+    if (ac3_coop_view) {
+        if (!G.replaying && target == DRAW_LAST_FN && ac3_guest_ra == DRAW_LAST_RA && G.view_on) {
+            ac3_interpret(ctx, target);
+            view_replay(ctx);
+            return 1;
+        }
+    }
+    if (target != PLAYER_UPDATE || G.replaying) return 0;
+    u32 resume = ac3_guest_ra;           /* where the tick continues */
     ctx_t entry = *ctx;
     ac3_interpret(ctx, target);          /* the host, as always */
     ctx_t host_result = *ctx;
     guest_update(ctx, &entry);
     *ctx = host_result;
+    if (ac3_coop_view) view_mark(ctx, resume);
     return 1;
 }
 
 void ac3_coop_status(char *out, int cap) {
-    snprintf(out, (size_t)cap, "guest %s handle 0x%05X created %u updates %u",
-             G.live ? "live" : "none", G.handle, G.created_field, G.updates);
+    snprintf(out, (size_t)cap, "guest %s handle 0x%05X created %u updates %u views %u",
+             G.live ? "live" : "none", G.handle, G.created_field, G.updates, G.views);
 }

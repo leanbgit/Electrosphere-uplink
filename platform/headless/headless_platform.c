@@ -91,10 +91,12 @@ int ac3_render_quit_requested(void) { return 0; }
 
 /* The visible part of VRAM as a PPM (15-bit or 24-bit display modes),
  * the same conversion as the page and renderer/shaders/psx.frag. */
+#include "coop.h"
 void ac3_render_screenshot(const char *path) {
     gpu_display_t d;
     gpu_display_state(&d);
-    if (!ac3_vram || !d.enabled || d.w <= 0 || d.h <= 0) return;
+    u16 *vram = ac3_coop_display_vram(ac3_vram);   /* co-op guest: its own picture */
+    if (!vram || !d.enabled || d.w <= 0 || d.h <= 0) return;
     if (d.w > 1024) d.w = 1024;
     if (d.h > 512) d.h = 512;
     FILE *f = fopen(path, "wb");
@@ -102,7 +104,7 @@ void ac3_render_screenshot(const char *path) {
     fprintf(f, "P6\n%d %d\n255\n", d.w, d.h);
     u8 *row = (u8 *)malloc((size_t)d.w * 3);
     for (int y = 0; y < d.h; y++) {
-        const u16 *v = ac3_vram + ((d.y + y) & 511) * GPU_VRAM_W;
+        const u16 *v = vram + ((d.y + y) & 511) * GPU_VRAM_W;
         u8 *o = row;
         for (int x = 0; x < d.w; x++) {
             if (d.rgb24) {

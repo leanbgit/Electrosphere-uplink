@@ -543,8 +543,38 @@ void psyq_ClearOTagR(ctx_t *ctx) {
     RET(ot);
 }
 
+#include "coop.h"
+/* Co-op, guest's computer: the frame is drawn twice. First the host's
+ * picture into the game's VRAM (identical on both computers: the game reads
+ * pixels back now and then), then the guest's picture into a display copy
+ * with the same starting GPU state. The enhanced renderer's hooks only see
+ * the guest's pass. See runtime/hle/coop.c. */
+static void draw_ot(u32 head) {
+    if (!ac3_coop_gpu_ready()) { walk_list(head); return; }   /* no guest picture this frame */
+    gpu_sw_state_t before = gpu_sw;
+#ifdef AC3_ENHANCED
+    const gpu_sw_hooks_t *hooks = gpu_sw_hooks;
+    gpu_sw_hooks = NULL;
+#endif
+    walk_list(head);
+#ifdef AC3_ENHANCED
+    gpu_sw_hooks = hooks;
+#endif
+    ac3_coop_gpu_draw(1);
+    gpu_sw_state_t after = gpu_sw;
+    u16 *game = ac3_vram, *disp = ac3_coop_display_pass(game);
+    if (disp) {
+        gpu_sw = before;
+        ac3_vram = disp;
+        walk_list(head);
+        ac3_vram = game;
+        gpu_sw = after;
+    }
+    ac3_coop_gpu_draw(0);
+}
+
 void psyq_DrawOTag(ctx_t *ctx) {
-    walk_list(A0);
+    draw_ot(A0);
     draw_count++;
     RET(0);
 }
