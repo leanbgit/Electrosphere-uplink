@@ -51,6 +51,15 @@ line with the stick ignored).
 - Player mode is not kept in sync after creation (end-of-mission mode 4,
   scripted sections).
 - S3: the guest's own view (camera + HUD).
+- **Each player shown to the other as a named ally** (requirement, 2026-10-28):
+  the host sees the guest's plane with the guest's name, like the allied NPCs
+  (e.g. "F15XA / Keith" with a FRND box and a friendly radar marker), and the
+  guest sees the host the same way. First test: giving the guest entity the
+  type word of the allied NPC in slot 3 (0x004) does **not** create a label, so
+  the labels come from a separate list of named friendly units (mission data
+  or a HUD target list), still to find. Plan: find that list and the name
+  table, add an entry for the other player with their name (the English font
+  is plain ASCII), keep the guest's name in the session settings.
 
 ## Bench recipe
 
