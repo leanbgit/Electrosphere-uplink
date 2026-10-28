@@ -1,3 +1,6 @@
+#ifdef AC3_COOP_PROBE
+#include "hle/coop_probe.h"
+#endif
 #include "ac3_runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -247,6 +250,9 @@ int main(int argc, char **argv) {
                     ac3_boot_capture_every((u32)strtoul(argv[++j], NULL, 0));
                 else if (strcmp(argv[j], "--capture-on-video") == 0)
                     ac3_capture_on_video();
+#ifdef AC3_COOP_PROBE
+                else if (ac3_coop_probe_arg(argc, argv, &j)) { }
+#endif
                 else if (strcmp(argv[j], "--dump") == 0 && j + 2 < argc) {
                     u32 a = (u32)strtoul(argv[j + 1], NULL, 0);
                     u32 l = (u32)strtoul(argv[j + 2], NULL, 0);

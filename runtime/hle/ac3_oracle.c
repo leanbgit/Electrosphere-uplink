@@ -323,6 +323,9 @@ void ac3_oracle_pads(void) {
             printf("oracle: input recording ended at field %u\n", vb);
         }
     }
+#ifdef AC3_COOP_PROBE
+    { extern void ac3_coop_probe_pads(void); ac3_coop_probe_pads(); }
+#endif
     if (O.rec) {
         u8 r[24];
         r[0] = (u8)vb; r[1] = (u8)(vb >> 8); r[2] = (u8)(vb >> 16); r[3] = (u8)(vb >> 24);

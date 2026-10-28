@@ -52,3 +52,4 @@ ACE3.BIN
 *.gme
 *.ac3i
 /rec/
+/build-headless/

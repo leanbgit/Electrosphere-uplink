@@ -63,8 +63,14 @@ static void scripted_input(void) {
     ac3_pad[0].buttons = b;
 }
 
+#ifdef AC3_COOP_PROBE
+#include "hle/coop_probe.h"
+#endif
 void ac3_boot_frame_hook(void) {
     if (!boot_running) return;
+#ifdef AC3_COOP_PROBE
+    ac3_coop_probe_field();
+#endif
     scripted_input();
     if (shot_frame && ac3_vblank_count() == shot_frame)
         ac3_render_screenshot("frame.ppm");
@@ -200,6 +206,12 @@ int ac3_boot(const char *exe, const char *disc, u32 frames, int trace,
     extern const spu_backend_t spu_backend_web;
     if (windowed) gpu_select_backend(&gpu_backend_web);
     if (windowed && !audio_off) spu_select_backend(&spu_backend_web);
+#elif defined(AC3_HEADLESS)
+    /* platform/headless: no window, no sound device (co-op research bench) */
+    extern const gpu_backend_t gpu_backend_headless;
+    extern const spu_backend_t spu_backend_headless;
+    if (windowed) gpu_select_backend(&gpu_backend_headless);
+    if (windowed && !audio_off) spu_select_backend(&spu_backend_headless);
 #else
     if (windowed) gpu_select_backend(&gpu_backend_vulkan);
     if (windowed && !audio_off) spu_select_backend(&spu_backend_sdl);
@@ -249,6 +261,9 @@ int ac3_boot(const char *exe, const char *disc, u32 frames, int trace,
     }
     boot_running = 0;
     ac3_oracle_finish();
+#ifdef AC3_COOP_PROBE
+    ac3_coop_probe_finish();
+#endif
 
     printf("----------------------------------------------------------\n");
     printf("stopped: %s\n", stop_reason);

@@ -58,7 +58,18 @@ extern int ac3_disc_scene_query(ctx_t *ctx, u32 target);
  * reads the guest's real return address from here instead. */
 u32 ac3_guest_ra;
 
+#ifdef AC3_COOP_PROBE
+#include "hle/coop_probe.h"
+#define COOP_READ(addr, n) do { u32 _a = (addr); \
+    if (ac3_coop_r_hi && _a >= ac3_coop_r_lo && _a < ac3_coop_r_hi) ac3_coop_read_hit(_a, (n)); } while (0)
+#else
+#define COOP_READ(addr, n) do { } while (0)
+#endif
+
 static void call_at(ctx_t *ctx, u32 target) {
+#ifdef AC3_COOP_PROBE
+    ac3_coop_call(target);
+#endif
     ovl_trace(ac3_interp_pc, target);
     ac3_probe_overlay_call(ctx, target);
     if (ac3_disc_scene_query(ctx, target)) return;
@@ -155,13 +166,13 @@ static void exec_one(ctx_t *ctx, u32 w, u32 pc, xfer_t *x) {
         case 0x0E: SET(RT(w), ctx->r[RS(w)] ^ IMM(w)); break;
         case 0x0F: SET(RT(w), IMM(w) << 16); break;
 
-        case 0x20: SET(RT(w), MEM_R8S(ctx->r[RS(w)] + SIMM(w))); break;
-        case 0x21: SET(RT(w), MEM_R16S(ctx->r[RS(w)] + SIMM(w))); break;
-        case 0x22: SET(RT(w), MEM_LWL(ctx->r[RT(w)], ctx->r[RS(w)] + SIMM(w))); break;
-        case 0x23: SET(RT(w), MEM_R32(ctx->r[RS(w)] + SIMM(w))); break;
-        case 0x24: SET(RT(w), MEM_R8U(ctx->r[RS(w)] + SIMM(w))); break;
-        case 0x25: SET(RT(w), MEM_R16U(ctx->r[RS(w)] + SIMM(w))); break;
-        case 0x26: SET(RT(w), MEM_LWR(ctx->r[RT(w)], ctx->r[RS(w)] + SIMM(w))); break;
+        case 0x20: COOP_READ(ctx->r[RS(w)] + SIMM(w), 1); SET(RT(w), MEM_R8S(ctx->r[RS(w)] + SIMM(w))); break;
+        case 0x21: COOP_READ(ctx->r[RS(w)] + SIMM(w), 2); SET(RT(w), MEM_R16S(ctx->r[RS(w)] + SIMM(w))); break;
+        case 0x22: COOP_READ(ctx->r[RS(w)] + SIMM(w), 4); SET(RT(w), MEM_LWL(ctx->r[RT(w)], ctx->r[RS(w)] + SIMM(w))); break;
+        case 0x23: COOP_READ(ctx->r[RS(w)] + SIMM(w), 4); SET(RT(w), MEM_R32(ctx->r[RS(w)] + SIMM(w))); break;
+        case 0x24: COOP_READ(ctx->r[RS(w)] + SIMM(w), 1); SET(RT(w), MEM_R8U(ctx->r[RS(w)] + SIMM(w))); break;
+        case 0x25: COOP_READ(ctx->r[RS(w)] + SIMM(w), 2); SET(RT(w), MEM_R16U(ctx->r[RS(w)] + SIMM(w))); break;
+        case 0x26: COOP_READ(ctx->r[RS(w)] + SIMM(w), 4); SET(RT(w), MEM_LWR(ctx->r[RT(w)], ctx->r[RS(w)] + SIMM(w))); break;
 
         case 0x28: MEM_W8(ctx->r[RS(w)] + SIMM(w), ctx->r[RT(w)]); break;
         case 0x29: MEM_W16(ctx->r[RS(w)] + SIMM(w), ctx->r[RT(w)]); break;
@@ -189,7 +200,7 @@ static void exec_one(ctx_t *ctx, u32 w, u32 pc, xfer_t *x) {
             }
             break;
 
-        case 0x32: ac3_gte_mtc2(ctx, RT(w),
+        case 0x32: COOP_READ(ctx->r[RS(w)] + SIMM(w), 4); ac3_gte_mtc2(ctx, RT(w),
                                 MEM_R32(ctx->r[RS(w)] + SIMM(w))); break;
         case 0x3A: MEM_W32(ctx->r[RS(w)] + SIMM(w),
                            ac3_gte_mfc2(ctx, RT(w))); break;

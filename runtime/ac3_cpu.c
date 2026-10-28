@@ -208,7 +208,13 @@ u32 ac3_watch_lo, ac3_watch_hi;
 static struct { u32 func; u32 writes, bytes, lo, hi; } watch_by_func[WATCH_SLOTS];
 static unsigned watch_slots;
 
+#ifdef AC3_COOP_PROBE
+#include "hle/coop_probe.h"
+#endif
 void ac3_watch_hit(u32 addr, u32 value, int size) {
+#ifdef AC3_COOP_PROBE
+    ac3_coop_write_hit(addr, value, size);
+#endif
     ac3_probe_write_hit(addr, value, size);
     for (unsigned i = 0; i < watch_slots; i++) {
         if (watch_by_func[i].func == ac3_cur_func) {

@@ -153,6 +153,17 @@ static void spu_ram_init(void) {
     if (!ac3_spu_ram) ac3_spu_ram = (u8 *)calloc(1, SPU_RAM_SIZE);
 }
 
+#ifdef AC3_COOP_PROBE
+/* coop_probe.c: hash of the SPU state the game can observe (RAM + voices) */
+void ac3_spu_state_hash(u64 *h) {
+    u64 x = 0xCBF29CE484222325ull;
+    const u8 *b = (const u8 *)ac3_spu_voice;
+    for (size_t i = 0; i < sizeof ac3_spu_voice; i++) { x ^= b[i]; x *= 0x100000001B3ull; }
+    if (ac3_spu_ram) for (u32 i = 0; i < SPU_RAM_SIZE; i += 8) { u64 w; memcpy(&w, ac3_spu_ram + i, 8); x ^= w; x *= 0x100000001B3ull; }
+    *h = x;
+}
+#endif
+
 void ac3_spu_pump(void) {
     if (!spu_ready) return;
     if (!spu || !spu->frames_wanted) return;
