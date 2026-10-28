@@ -17,6 +17,9 @@
  *                                 fields, with its caller and a call count
  *   --coop-args F1,F2,.. FROM-TO FILE
  *                                 a0-a3 and sp at each call of these functions
+ *   --coop-wfn FUNC FROM-TO FILE  every write (outside the stack) made while
+ *                                 FUNC and its callees run
+ *   --coop-guest                  second aircraft driven by port 2 (runtime/hle/coop.h)
  *   --coop-p2 FILE                second controller from another recording
  *                                 (port 2 of an .ac3i file replaces port 2)
  */
@@ -32,6 +35,8 @@ void ac3_coop_probe_pads(void);                             /* after the recordi
 void ac3_coop_write_hit(u32 addr, u32 value, int size);
 void ac3_coop_call(u32 target);
 void ac3_coop_call_args(ctx_t *ctx, u32 target);
+int  ac3_coop_wfn_begin(u32 target);
+void ac3_coop_wfn_end(void);
 extern u32 ac3_coop_r_lo, ac3_coop_r_hi;
 void ac3_coop_read_hit(u32 addr, int size);
 #endif

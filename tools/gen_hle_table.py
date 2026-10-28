@@ -44,7 +44,8 @@ def main():
             f.write(f'    {{ 0x{a:08X}u, psyq_{n} }},\n')
         f.write('};\n')
         f.write('const unsigned ac3_func_table_len = sizeof(ac3_func_table)/sizeof(ac3_func_table[0]);\n')
-        f.write('unsigned long long ac3_prof[1];\nconst unsigned ac3_prof_len = 0;\n')
+        # ac3_prof_dump() reads one counter per table entry: size it to match
+        f.write(f'unsigned long long ac3_prof[{max(len(entries), 1)}];\nconst unsigned ac3_prof_len = 0;\n')
     print(f'{len(entries)} Psy-Q replacements -> {out}')
 
 

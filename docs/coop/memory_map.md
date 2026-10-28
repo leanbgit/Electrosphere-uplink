@@ -21,7 +21,13 @@ seen in RAM or in a trace; *read* = read from the code; *guess* = still to confi
 | 0x800CBF58 | random seed | read (oracle) |
 
 The player state block spans at least **0x801771E0–0x801772B4** (all writes in
-that page during a flight field fall inside it).
+that page during a flight field fall inside it). Known fields:
+
+| Address | Meaning | Confidence |
+|---|---|---|
+| 0x801771E0–0x80177206 | control rates written by `0x8006D0DC` from the input map | measured |
+| [gp+0x520]+4 = 0x8017720C | **player mode**: 2 then 4 at mission start, 1 = player has control, 4 again at mission end; `0x800729DC` switches on it | measured |
+| 0x80177294 (+0xB4) | missiles left (168 at the start of the first mission) | measured |
 
 ## Entities
 
@@ -30,7 +36,7 @@ The slot table points into one fixed pool at **0x8014552C–0x80147324**:
 | Slots | Size | Seen holding |
 |---|---|---|
 | 0 | 0x58 | **the player's aircraft** |
-| 1 | 0x58 | nothing live so far (candidate: unused second "player" slot, **to check in other missions**) |
+| 1 | 0x58 | nothing live so far; **used by the co-op guest** (S2_guest.md) |
 | 2–31 | 0x5C | aircraft and missiles |
 | 32–63 | 0x94 | ground objects, turrets, structures |
 
@@ -100,6 +106,10 @@ The "identity swap" in the roadmap looks practical:
    weapon counters, camera, sound); each one either gets swapped too or is
    kept host-only.
 
-**Still to find:** where the mission creates the player (slot 0, state block)
-so the guest can be created at the same moment; the target-selection code;
-kill credit; what slot 1 is for.
+**Done in S2_guest.md** (this works). The player update also writes two
+host-only places (engine sound channels at 0x800C5830, a word at 0x800BD0C0)
+and a per-player position copy at 0x800C7BE8.
+
+**Still to find:** the missile pool, the target-selection code, kill credit,
+and where missiles are launched from (the guest's missile counter drops, so
+probably inside the player update).

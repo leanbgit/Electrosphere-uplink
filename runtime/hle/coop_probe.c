@@ -56,6 +56,7 @@ static struct {
     FILE *calls; u32 c_lo, c_hi;
     FILE *p2; int p2_done;
     u32 fn[16]; int nfn; u32 fn_lo, fn_hi; FILE *fnlog;
+    u32 wfn; u32 wfn_lo, wfn_hi; FILE *wfnlog; int wfn_depth; u32 wfn_saved_lo, wfn_saved_hi;
 } P;
 static u32 w_addr_lo, w_addr_hi;
 u32 ac3_coop_r_lo, ac3_coop_r_hi;
@@ -109,6 +110,18 @@ int ac3_coop_probe_arg(int argc, char **argv, int *j) {
         range(argv[*j + 2], &P.fn_lo, &P.fn_hi, NULL);
         P.fnlog = open_w(argv[*j + 3]);
         if (P.fnlog) fprintf(P.fnlog, "field\ttarget\tcaller\ta0\ta1\ta2\ta3\tsp\n");
+        *j += 3; return 1;
+    }
+    if (!strcmp(a, "--coop-guest")) {
+        extern int ac3_coop_guest;
+        ac3_coop_guest = 1;
+        return 1;
+    }
+    if (!strcmp(a, "--coop-wfn") && left >= 3) {
+        P.wfn = (u32)strtoul(argv[*j + 1], NULL, 0);
+        range(argv[*j + 2], &P.wfn_lo, &P.wfn_hi, NULL);
+        P.wfnlog = open_w(argv[*j + 3]);
+        if (P.wfnlog) fprintf(P.wfnlog, "field\tpc\tcaller\taddr\tsize\tvalue\n");
         *j += 3; return 1;
     }
     if (!strcmp(a, "--coop-p2") && left >= 1) {
@@ -204,7 +217,28 @@ void ac3_coop_probe_field(void) {
     }
 }
 
+/* --coop-wfn: while FUNC (and everything it calls) runs, every write outside
+ * the stack is logged. */
+int ac3_coop_wfn_begin(u32 target) {
+    if (!P.wfnlog || target != P.wfn || P.wfn_depth) return 0;
+    u32 f = ac3_vblank_count();
+    if (f < P.wfn_lo || f > P.wfn_hi) return 0;
+    P.wfn_depth = 1;
+    P.wfn_saved_lo = ac3_watch_lo; P.wfn_saved_hi = ac3_watch_hi;
+    ac3_watch_lo = 0x80000000u; ac3_watch_hi = 0x801F0000u;   /* below the stack */
+    return 1;
+}
+void ac3_coop_wfn_end(void) {
+    P.wfn_depth = 0;
+    ac3_watch_lo = P.wfn_saved_lo; ac3_watch_hi = P.wfn_saved_hi;
+}
+
 void ac3_coop_write_hit(u32 addr, u32 value, int size) {
+    if (P.wfn_depth && P.wfnlog) {
+        fprintf(P.wfnlog, "%u\t%08X\t%08X\t%08X\t%d\t%08X\n", ac3_vblank_count(),
+                ac3_interp_pc, ac3_guest_ra, addr, size, value);
+        return;
+    }
     if (!P.wlog) return;
     fprintf(P.wlog, "%u\t%08X\t%08X\t%08X\t%d\t%08X\n", ac3_vblank_count(),
             ac3_interp_pc, ac3_guest_ra, addr, size, value);
@@ -235,7 +269,7 @@ void ac3_coop_call(u32 target) {
 }
 
 void ac3_coop_probe_finish(void) {
-    FILE *all[] = { P.hash, P.ents, P.wlog, P.rlog, P.calls, P.p2, P.fnlog };
+    FILE *all[] = { P.hash, P.ents, P.wlog, P.rlog, P.calls, P.p2, P.fnlog, P.wfnlog };
     for (unsigned i = 0; i < sizeof all / sizeof all[0]; i++) if (all[i]) fclose(all[i]);
     memset(&P, 0, sizeof P);
 }

@@ -5,6 +5,7 @@ the project's `COOP_ROADMAP.md`; findings so far:
 
 - [memory_map.md](memory_map.md): what is known about the game's player, entities and controllers
 - [S1_determinism.md](S1_determinism.md): spike S1, can two browsers stay in step
+- [S2_guest.md](S2_guest.md): spike S2, a second aircraft flown from controller port 2
 
 ## The headless bench
 
@@ -43,7 +44,9 @@ hash log, and whatever the options ask for.
 | `--coop-rlog ADDR LEN FROM-TO FILE` | the same for reads |
 | `--coop-calls FROM-TO FILE` | every guest function entered |
 | `--coop-args F1,F2,... FROM-TO FILE` | a0–a3 and sp at each call of those functions |
-| `--coop-p2 REC` | second controller taken from another recording's port 2 |
+| `--coop-wfn FUNC FROM-TO FILE` | every write (outside the stack) made while FUNC and its callees run |
+| `--coop-p2 REC` | second controller taken from another recording's port 2 (make one with `tools/coop/make_p2.py`) |
+| `--coop-guest` | the co-op guest aircraft (`runtime/hle/coop.c`, see S2_guest.md) |
 
 Field windows: the game often runs at 30 frames per second in flight (it waits
 two fields per frame), so a one-field window can contain no game code at all.

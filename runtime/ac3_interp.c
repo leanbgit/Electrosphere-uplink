@@ -66,11 +66,25 @@ u32 ac3_guest_ra;
 #define COOP_READ(addr, n) do { } while (0)
 #endif
 
+static void call_dispatch(ctx_t *ctx, u32 target);
+
 static void call_at(ctx_t *ctx, u32 target) {
 #ifdef AC3_COOP_PROBE
     ac3_coop_call(target);
     ac3_coop_call_args(ctx, target);
+    if (ac3_coop_wfn_begin(target)) {
+        call_dispatch(ctx, target);
+        ac3_coop_wfn_end();
+        return;
+    }
 #endif
+    call_dispatch(ctx, target);
+}
+
+#include "hle/coop.h"
+
+static void call_dispatch(ctx_t *ctx, u32 target) {
+    if (ac3_coop_guest && ac3_coop_intercept(ctx, target)) return;
     ovl_trace(ac3_interp_pc, target);
     ac3_probe_overlay_call(ctx, target);
     if (ac3_disc_scene_query(ctx, target)) return;
