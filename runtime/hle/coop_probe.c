@@ -55,6 +55,7 @@ static struct {
     FILE *rlog; u32 rf_lo, rf_hi;
     FILE *calls; u32 c_lo, c_hi;
     FILE *p2; int p2_done;
+    u32 fn[16]; int nfn; u32 fn_lo, fn_hi; FILE *fnlog;
 } P;
 static u32 w_addr_lo, w_addr_hi;
 u32 ac3_coop_r_lo, ac3_coop_r_hi;
@@ -101,6 +102,14 @@ int ac3_coop_probe_arg(int argc, char **argv, int *j) {
         P.calls = open_w(argv[*j + 2]);
         if (P.calls) fprintf(P.calls, "field\ttarget\tcaller\n");
         *j += 2; return 1;
+    }
+    if (!strcmp(a, "--coop-args") && left >= 3) {
+        char *s = argv[*j + 1];
+        while (*s && P.nfn < 16) { P.fn[P.nfn++] = (u32)strtoul(s, &s, 0); if (*s == ',') s++; else break; }
+        range(argv[*j + 2], &P.fn_lo, &P.fn_hi, NULL);
+        P.fnlog = open_w(argv[*j + 3]);
+        if (P.fnlog) fprintf(P.fnlog, "field\ttarget\tcaller\ta0\ta1\ta2\ta3\tsp\n");
+        *j += 3; return 1;
     }
     if (!strcmp(a, "--coop-p2") && left >= 1) {
         P.p2 = fopen(argv[++*j], "rb");
@@ -208,6 +217,16 @@ void ac3_coop_read_hit(u32 addr, int size) {
             ac3_interp_pc, ac3_guest_ra, addr, size, v);
 }
 
+void ac3_coop_call_args(ctx_t *ctx, u32 target) {
+    if (!P.fnlog) return;
+    u32 f = ac3_vblank_count();
+    if (f < P.fn_lo || f > P.fn_hi) return;
+    for (int i = 0; i < P.nfn; i++)
+        if (P.fn[i] == target)
+            fprintf(P.fnlog, "%u\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\n", f, target, ac3_guest_ra,
+                    ctx->r[4], ctx->r[5], ctx->r[6], ctx->r[7], ctx->r[29]);
+}
+
 void ac3_coop_call(u32 target) {
     if (!P.calls) return;
     u32 f = ac3_vblank_count();
@@ -216,7 +235,7 @@ void ac3_coop_call(u32 target) {
 }
 
 void ac3_coop_probe_finish(void) {
-    FILE *all[] = { P.hash, P.ents, P.wlog, P.rlog, P.calls, P.p2 };
+    FILE *all[] = { P.hash, P.ents, P.wlog, P.rlog, P.calls, P.p2, P.fnlog };
     for (unsigned i = 0; i < sizeof all / sizeof all[0]; i++) if (all[i]) fclose(all[i]);
     memset(&P, 0, sizeof P);
 }

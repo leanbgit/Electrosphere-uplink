@@ -15,6 +15,8 @@
  *                                 the same for guest reads (interpreter loads)
  *   --coop-calls FROM-TO FILE     every guest function entered during those
  *                                 fields, with its caller and a call count
+ *   --coop-args F1,F2,.. FROM-TO FILE
+ *                                 a0-a3 and sp at each call of these functions
  *   --coop-p2 FILE                second controller from another recording
  *                                 (port 2 of an .ac3i file replaces port 2)
  */
@@ -29,6 +31,7 @@ void ac3_coop_probe_finish(void);
 void ac3_coop_probe_pads(void);                             /* after the recording's pads */
 void ac3_coop_write_hit(u32 addr, u32 value, int size);
 void ac3_coop_call(u32 target);
+void ac3_coop_call_args(ctx_t *ctx, u32 target);
 extern u32 ac3_coop_r_lo, ac3_coop_r_hi;
 void ac3_coop_read_hit(u32 addr, int size);
 #endif

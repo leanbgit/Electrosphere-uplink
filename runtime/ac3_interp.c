@@ -69,6 +69,7 @@ u32 ac3_guest_ra;
 static void call_at(ctx_t *ctx, u32 target) {
 #ifdef AC3_COOP_PROBE
     ac3_coop_call(target);
+    ac3_coop_call_args(ctx, target);
 #endif
     ovl_trace(ac3_interp_pc, target);
     ac3_probe_overlay_call(ctx, target);
