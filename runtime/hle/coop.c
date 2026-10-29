@@ -70,15 +70,37 @@ static const struct { u32 off, len; } view_private[] = {
 #define N_VIEW_PRIVATE (sizeof view_private / sizeof view_private[0])
 static void guest_camera_swap(u32 host, u32 mine);
 
-/* The HUD's lock-on progress. Locking takes several frames: the HUD code
- * (0x8003F2CC, 0x800409D4, 0x80040A18) keeps a state and a timer in the first
- * two bytes of each target's record (pointers at 0x800C67A0 + 4 * slot) and
+/* The HUD's targets, seen from one player. Each target has a 0x34-byte
+ * record (pointers at 0x800C67A0 + 4 * slot) filled relative to "the player":
+ * the tick (0x80045278) stores the target's distance at +0x10 and only
+ * recomputes it every 16 frames for targets over 0x84D0 away, and sets the
+ * in-range/visible flags at +0x0C from it; the targeting step writes +0x2C;
+ * the HUD shows and locks only targets flagged in range. Locking also takes
+ * several frames: the HUD code (0x8003F2CC, 0x800409D4, 0x80040A18) keeps a
+ * state and a timer in the first two bytes of the record and
  * the lock in progress at gp+0x354..0x35B (0x800BCEC8: state, target slot,
  * and the lock box's shrinking animation, 0x800409D4). The guest needs its
- * own, kept from one replay to the next, or its lock never completes. */
+ * own copy of all of it, kept from one frame to the next: with the host's,
+ * targets near the guest but far from the host stayed "out of range" (the
+ * box flickered and jumped) and a lock never completed. */
 #define HUD_GLOB       0x800BCEC8u
 #define HUD_GLOB_LEN   8u
 #define HUD_RECS       0x800C67A0u
+#define HUD_REC_LEN    0x34u     /* the whole target record */
+/* HUD state the drawing code keeps from one frame to the next, seen from one
+ * player (0x8003D1A4, 0x8003DA70, 0x8003DD08, 0x8003D450, 0x800309A8:
+ * per-target arrays; 0x800662B4: the gun reticle). */
+static const struct { u32 addr, len; } hud_static[] = {
+    { 0x800C68E0u, 0x480u },   /* 0x800C68E0 (12 bytes x 32) and 0x800C6A60 (12 bytes x 64) */
+    { 0x800C6D78u, 0x08u },    /* 0x800C6D7C (0x8003D450) */
+    { 0x800C6EA0u, 0x14u },    /* 0x800309A8.. */
+    /* the gun reticle (0x800662B4): a ring of 32 positions of the player's
+     * bullets, one per frame, and its index; the reticle is drawn where the
+     * bullets fired some frames ago have got to */
+    { 0x800C79C8u, 0x200u },
+    { 0x800BD070u, 0x04u },    /* gp+0x4FC: ring index, gp+0x4FD: reticle entry */
+};
+#define N_HUD_STATIC (sizeof hud_static / sizeof hud_static[0])
 static void guest_hud_swap(void);
 
 static struct {
@@ -95,7 +117,8 @@ static struct {
     /* the HUD's lock-on progress (see guest_hud_swap) */
     int hud_valid;
     u8  hud_glob[HUD_GLOB_LEN];
-    u8  hud_rec[64][2];
+    u8  hud_rec[64][HUD_REC_LEN];
+    u8  hud_static[N_HUD_STATIC][0x480];
     u8 *snap_ram, *keep_buf;
     u8  snap_scratch[1024];
     ctx_t snap_ctx;
@@ -197,16 +220,18 @@ static void guest_camera_swap(u32 host, u32 mine) {
 static void guest_hud_swap(void) {
     if (!G.hud_valid) {
         copy_out(HUD_GLOB, G.hud_glob, HUD_GLOB_LEN);
+        for (unsigned i = 0; i < N_HUD_STATIC; i++) copy_out(hud_static[i].addr, G.hud_static[i], hud_static[i].len);
         for (u32 t = 0; t < 64u; t++) {
             u32 r = MEM_R32(HUD_RECS + 4u * t);
-            if (ram_ptr(r)) copy_out(r, G.hud_rec[t], 2);
+            if (ram_ptr(r)) copy_out(r, G.hud_rec[t], HUD_REC_LEN);
         }
         G.hud_valid = 1;
     }
     exchange(HUD_GLOB, G.hud_glob, HUD_GLOB_LEN);
+    for (unsigned i = 0; i < N_HUD_STATIC; i++) exchange(hud_static[i].addr, G.hud_static[i], hud_static[i].len);
     for (u32 t = 0; t < 64u; t++) {
         u32 r = MEM_R32(HUD_RECS + 4u * t);
-        if (ram_ptr(r)) exchange(r, G.hud_rec[t], 2);
+        if (ram_ptr(r)) exchange(r, G.hud_rec[t], HUD_REC_LEN);
     }
 }
 

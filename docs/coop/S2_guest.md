@@ -133,3 +133,40 @@ Found with the user's recording `coop_20261029195939` (a night mission).
   gets control (around the "Engage" banner); the test page showed the host's
   picture on the guest's side. The page now dims that picture and says so.
 
+## Fixed 2026-10-29 (third browser test): target box when far from the host
+
+Recording `coop_20261029205939`: with the host 30,000–40,000 units away, enemy
+planes right in front of the guest got no target box (it flickered and jumped)
+and could not be locked. Each target's record (0x34 bytes, pointers at
+0x800C67A0 + 4·slot) is filled relative to "the player": the tick
+(`0x80045278`) keeps the target's distance at +0x10 and **recomputes it only
+every 16 frames for targets over 0x84D0 away**, and the in-range/visible flags
+at +0x0C come from it. The guest's replay started each frame from the host's
+records, so a target near the guest kept the host's "far" distance except on
+its one frame in 16. The guest now keeps its own copy of the whole records
+(with the lock state), exchanged around its update and its replay. Checked:
+boxes and a lock (red box, 1,876 units) at 40,000 units from the host; host's
+and guest's computers byte-identical over the whole recording (7,680 fields).
+
+## Fixed 2026-10-29 (fourth browser test): the guest's gun reticle
+
+Recording `coop_20261029211358`. Closing in with the gun, the guest never got
+the green gun circle, and now and then a circle flashed up somewhere else.
+The reticle code (`0x800662B4`, from the HUD module `0x80063E4C`) keeps a ring of
+32 positions of the player's bullets at 0x800C79C8 (16 bytes each, index at
+gp+0x4FC) and draws the circle where the bullets fired some frames ago have got
+to. Only the host's positions ever stayed in the ring (the guest's replay
+memory is thrown away). The ring and its index are now part of the guest's own
+HUD state (with the per-target HUD arrays at 0x800C68E0..0x800C6D60). Checked:
+the circle sits in front of the guest and travels to the bomber as in single
+player; host's and guest's computers byte-identical (10,020 fields).
+
+## Found, not fixed yet: far objects freeze unless the host is near
+
+Same recording. The bombers (slots 5–8) have speed exactly 0 whenever they are
+more than about 50,000 units from the host, in a solo replay and in co-op alike,
+even with the guest flying 3,600–14,000 units from them (field 7,200–9,000:
+bomber 6 still, guest beside it, host 140,000–200,000 away). The game only runs
+distant objects near "the player", and that is the host. To do: find the
+activation check and use the nearer of the two players.
+
