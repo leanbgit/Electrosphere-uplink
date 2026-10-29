@@ -113,16 +113,6 @@ int ac3_coop_probe_arg(int argc, char **argv, int *j) {
         if (P.fnlog) fprintf(P.fnlog, "field\ttarget\tcaller\ta0\ta1\ta2\ta3\tsp\n");
         *j += 3; return 1;
     }
-    if (!strcmp(a, "--coop-guest")) {
-        extern int ac3_coop_guest;
-        ac3_coop_guest = 1;
-        return 1;
-    }
-    if (!strcmp(a, "--coop-view")) {
-        extern int ac3_coop_view;
-        ac3_coop_view = 1;
-        return 1;
-    }
     if (!strcmp(a, "--coop-rfn") && left >= 3) {
         P.rfn = (u32)strtoul(argv[*j + 1], NULL, 0);
         range(argv[*j + 2], &P.rfn_lo, &P.rfn_hi, NULL);

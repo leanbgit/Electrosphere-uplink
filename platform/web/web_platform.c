@@ -42,6 +42,17 @@ EM_JS(void, web_read_pad, (int *out), {
 EM_JS(void, web_post_frame, (const u8 *rgba, int w, int h, int seq), {
     AC3W.postFrame(HEAPU8.subarray(rgba, rgba + w * h * 4), w, h, seq);
 });
+/* co-op: controller 2 (0 = none) and the guest's picture for the local split view */
+EM_JS(int, web_read_pad2, (int *out), {
+    const p = AC3W.pad2State ? AC3W.pad2State() : null;
+    if (!p) return 0;
+    for (let i = 0; i < 7; i++) HEAP32[(out >> 2) + i] = p[i];
+    return 1;
+});
+/* own: 1 = the guest's own view, 0 = the host's picture (no guest view this field) */
+EM_JS(void, web_post_frame2, (const u8 *rgba, int w, int h, int seq, int own), {
+    if (AC3W.postFrame2) AC3W.postFrame2(HEAPU8.subarray(rgba, rgba + w * h * 4), w, h, seq, own);
+});
 EM_JS(void, web_sleep_ms, (double ms), { AC3W.sleep(ms); });
 EM_JS(int, web_audio_queued, (void), { return AC3W.audioQueued(); });
 EM_JS(int, web_audio_ok, (void), { return AC3W.audioOk() ? 1 : 0; });
@@ -73,15 +84,19 @@ EM_JS(int, web_hd_settings, (void), { return AC3W.hdSettings(); });
 
 /* ------------------------------------------------------------------ input */
 
-static void web_input_poll(void) {
-    int s[7];
-    web_read_pad(s);
-    ac3_pad_t *p = &ac3_pad[0];
+static void pad_from(ac3_pad_t *p, const int *s) {
     p->connected = 1;
     p->type = (u8)(s[1] ? AC3_PAD_ANALOG : AC3_PAD_DIGITAL);
     p->buttons = (u16)s[2];
     p->lx = (u8)s[3]; p->ly = (u8)s[4];
     p->rx = (u8)s[5]; p->ry = (u8)s[6];
+}
+
+static void web_input_poll(void) {
+    int s[7];
+    web_read_pad(s);
+    pad_from(&ac3_pad[0], s);
+    if (web_read_pad2(s)) pad_from(&ac3_pad[1], s);    /* co-op: the guest's controller */
 }
 
 /* ------------------------------------------------------------ frame pacing */
@@ -122,6 +137,7 @@ static int hd;                         /* 1 = enhanced renderer active */
 static int frames_without_3d = 1000;
 
 static void convert_display(const gpu_display_t *d);
+static void convert_display_from(const gpu_display_t *d, const u16 *vram);
 static void hd_skip_frame(const gpu_display_t *d0) {
     gpu_display_t d = *d0;
     if (d.w > 1024) d.w = 1024;
@@ -201,6 +217,14 @@ static void hd_frame(void) {
 }
 #endif
 
+/* co-op, guest's computer: its own picture (runtime/hle/coop.c); otherwise ac3_vram.
+ * In the local split view (--coop-split) the main picture stays the host's and
+ * the guest's goes out separately (web_frame_end). */
+static void convert_display_from(const gpu_display_t *d, const u16 *vram);
+static void convert_display(const gpu_display_t *d) {
+    convert_display_from(d, ac3_coop_split ? ac3_vram : ac3_coop_display_vram(ac3_vram));
+}
+
 static void web_init(void) {
     rgba = (u8 *)malloc(1024 * 512 * 4);
 #ifdef AC3_HW_WEBGPU
@@ -217,11 +241,9 @@ static void web_shutdown(void) {
 }
 
 /* Same conversion as renderer/shaders/psx.frag: 15-bit BGR555 or packed 24-bit. */
-static void convert_display(const gpu_display_t *d) {
+static void convert_display_from(const gpu_display_t *d, const u16 *vram) {
     int w = d->w, h = d->h;
     u8 *o = rgba;
-    /* co-op, guest's computer: its own picture (runtime/hle/coop.c); otherwise ac3_vram */
-    const u16 *vram = ac3_coop_display_vram(ac3_vram);
     for (int y = 0; y < h; y++) {
         int vy = (d->y + y) & 511;
         const u16 *row = vram + vy * GPU_VRAM_W;
@@ -262,8 +284,14 @@ static void web_frame_end(void) {
     if (d.enabled && d.w > 0 && d.h > 0 && rgba) {
         convert_display(&d);
         web_post_frame(rgba, d.w, d.h, (int)++seq);
+        if (ac3_coop_split) {                     /* local co-op test: the guest's view too */
+            const u16 *g = ac3_coop_display_vram(ac3_vram);
+            convert_display_from(&d, g);          /* the host's picture while the guest has none */
+            web_post_frame2(rgba, d.w, d.h, (int)seq, g != ac3_vram);
+        }
     } else {
         web_post_frame(rgba, 0, 0, (int)++seq);   /* display off: black */
+        if (ac3_coop_split) web_post_frame2(rgba, 0, 0, (int)seq, 0);
     }
     pace_field();
 }

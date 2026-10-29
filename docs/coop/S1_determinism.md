@@ -58,4 +58,4 @@ GTE's depth cueing (`ac3_gte_no_depthcue`). The game sees these values.
       existing `platform/web/run_worker_node.js`) with a hash log.
 - [ ] Full 48,469-field recording, and the Geofront recording.
 - [x] Count voice-status reads: once per game frame (see above).
-- [ ] Fixed-rate audio mode for the web build.
+- [x] Fixed-rate audio mode: whenever co-op is on (`ac3_coop_guest`), the mix is the fixed per-field amount, as in replays (`psyq_spu.c`).

@@ -21,6 +21,9 @@
 //                         a GPU: original pictures, enhanced game logic (hd skip mode)
 //   --no-wide             with --hd-cpu: widescreen off
 //   --game-args "a b"     extra game command-line arguments (e.g. "--no-fx")
+//   --coop REC2           co-op local test (as web/test/coop.html): controller 2
+//                         from port 2 of REC2 (tools/coop/make_p2.py), both views;
+//                         screenshots of the guest's view are written as guest_NNNNNN.ppm
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const a = process.argv.slice(2);
@@ -68,6 +71,10 @@ globalThis.fetch = async (url, o) => {
 // ---- shared memory, exactly as app.js creates it
 const ctrl = new Int32Array(new SharedArrayBuffer(16));
 const pad = new Int32Array(new SharedArrayBuffer(28));
+const pad2 = new Int32Array(new SharedArrayBuffer(28));
+pad2.set([1, 1, 0, 128, 128, 128, 128]);
+const coopRec = opt('--coop', null) ? fs.readFileSync(opt('--coop', null)) : null;
+let frames2 = 0, own2 = 0;
 const ringFrames = 44100, ring = new SharedArrayBuffer(8 + ringFrames * 4), ringHead = new Int32Array(ring, 0, 2);
 Atomics.store(ctrl, 1, 1);                     // "audio running": exercise the audio path too
 pad.set([1, 0, 0, 128, 128, 128, 128]);
@@ -85,6 +92,18 @@ globalThis.postMessage = (m) => {
       break;
     }
     case 'exit': console.log(`[page] program exited (${m.code})`); break;
+    case 'recording':                                   // --record-input (coop.html's "Record this session")
+      for (const f of m.files) { fs.writeFileSync(f.name, Buffer.from(f.data)); console.log(`[page] recording ${f.name} (${f.data.byteLength} bytes)`); }
+      break;
+    case 'frame2': {                                    // co-op: the guest's view
+      frames2++; if (m.own) own2++;
+      if ((shotEvery && fields % shotEvery === 0 || shotAt.has(fields)) && m.w) {
+        const px = new Uint8Array(m.buf), rgb = Buffer.alloc(m.w * m.h * 3);
+        for (let i = 0; i < m.w * m.h; i++) { rgb[i * 3] = px[i * 4]; rgb[i * 3 + 1] = px[i * 4 + 1]; rgb[i * 3 + 2] = px[i * 4 + 2]; }
+        fs.writeFileSync(`guest_${String(fields).padStart(6, '0')}.ppm`, Buffer.concat([Buffer.from(`P6\n${m.w} ${m.h}\n255\n`), rgb]));
+      }
+      break;
+    }
     case 'frame': {
       fields++;
       // drain one field of audio, like the AudioWorklet would
@@ -93,6 +112,11 @@ globalThis.postMessage = (m) => {
       Atomics.store(ringHead, 0, (r + Math.min(q, 735)) % ringFrames);
       // scripted input for the next field
       let b = 0; for (const p of presses) if (fields >= p.s && fields <= p.e) b |= p.m; pad[2] = b;
+      if (coopRec) {                                   // controller 2 from the co-op recording's port 2
+        const o = 16 + 24 * fields + 14;
+        if (o + 8 <= coopRec.length) pad2.set([coopRec[o], coopRec[o + 1] === 0x73 ? 1 : 0, coopRec[o + 2] | coopRec[o + 3] << 8,
+                                               coopRec[o + 4], coopRec[o + 5], coopRec[o + 6], coopRec[o + 7]]);
+      }
       // --find-subtitles: log fields that look like a letterboxed scene with
       // text in the bottom bar (dark top/bottom bands, bright pixels inside the lower band)
       if (findSubs && m.w) {
@@ -123,7 +147,8 @@ globalThis.postMessage = (m) => {
 self.addEventListener = (type, fn) => { if (type === 'unhandledrejection') process.on('unhandledRejection', reason => fn({ reason })); };
 process.on('uncaughtException', e => { console.log('[bench] UNCAUGHT: ' + (e && e.stack || e)); process.exitCode = 4; });
 process.on('exit', () => { for (const [n, [r, b]] of Object.entries(readStats)) console.error(`[bench] reads ${String(r).padStart(8)}  ${(b / 1048576).toFixed(1).padStart(8)} MB  ${n}`); });
-process.on('exit', c => console.error(`[bench] end: ${fields} fields in ${((Date.now() - t0) / 1000).toFixed(1)} s, ${cardWrites} card writes, exit code ${c}`));
+process.on('exit', c => console.error(`[bench] end: ${fields} fields in ${((Date.now() - t0) / 1000).toFixed(1)} s, ${cardWrites} card writes, exit code ${c}` +
+  (coopRec ? `, ${frames2} guest pictures (${own2} the guest's own view)` : '')));
 
 // --play-input REC: replay a controller recording made by the native build
 // (ac3.exe --record-input REC), starting from the card snapshots saved with it.
@@ -143,14 +168,16 @@ const en = a.includes('--english') ? a.slice(a.indexOf('--english') + 1, a.index
 const ca = a.includes('--caches') ? a.slice(a.indexOf('--caches') + 1, a.indexOf('--caches') + 3) : null;
 const card = opt('--card', null);
 self.onmessage({ data: {
-  type: 'start', ctrl: ctrl.buffer, pad: pad.buffer, ring,
+  type: 'start', ctrl: ctrl.buffer, pad: pad.buffer, ring, pad2: coopRec ? pad2.buffer : undefined,
   discs: discPaths.map(p => new DiskFile(p)),
   patches: en ? [{ disc: 1, file: new DiskFile(en[0]) }, { disc: 2, file: new DiskFile(en[1]) }] : [],
   caches: ca ? [{ disc: 1, file: new DiskFile(ca[0]) }, { disc: 2, file: new DiskFile(ca[1]) }] : [],
   english: !!en,
   cards: card ? [{ slot: 0, data: fs.readFileSync(card).buffer }] : [],
   ...(() => { const pi = playInput(opt('--play-input', null)); const ga = opt('--game-args', '');
-              if (ga) pi.extraArgs = (pi.extraArgs || []).concat(ga.split(' ')); return pi; })(),
+              if (ga) pi.extraArgs = (pi.extraArgs || []).concat(ga.split(' '));
+              if (coopRec) pi.extraArgs = (pi.extraArgs || []).concat(['--coop-guest', '--coop-split']);
+              return pi; })(),
   hd: a.includes('--hd-cpu') ? { scale: 1, wide: !a.includes('--no-wide'), port: new MessageChannel().port1,
         done: new SharedArrayBuffer(4), skip: 1e9 } : null,
 } });

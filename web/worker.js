@@ -8,6 +8,7 @@
 //   hd.done Int32Array: [0] last field the render worker's GPU has finished
 // Enhanced graphics: fields go to web/render-worker.js through hd.port.
 //   pad   Int32Array(7): connected, analog, buttons, lx, ly, rx, ry
+//   pad2  the same for controller 2 (co-op guest; optional)
 //   ring  audio ring: Int32 header [read, write] + Int16 stereo samples
 'use strict';
 const DEV = true;    // site/ (build.sh): false (test-bench options ignored in the website)
@@ -16,7 +17,7 @@ const RAW = 2352, USER_OFF = 24, USER = 2048;
 const EXE_SHA256 = '2c3f2ce41268176128973ea0cd9b28784a26c0061bff5550c99599388f13ebe9';
 const DISC_NAME = n => `Ace Combat 3 - Electrosphere (Japan, Asia) (Disc ${n}) (Rev 1).bin`;
 
-let ctrl, pad, ringHead, ringData, ringFrames;
+let ctrl, pad, pad2 = null, ringHead, ringData, ringFrames;
 // enhanced graphics: port to the render worker and its "fields done" counter
 let hdPort = null, hdDone = null, hdSkip = 0, hdSet = null, hdSetSeen = 0;
 const reader = new FileReaderSync();
@@ -63,6 +64,11 @@ async function sha256hex(bytes) {
 self.AC3W = {
   quitRequested: () => Atomics.load(ctrl, 0) !== 0,
   padState: () => pad,
+  pad2State: () => pad2,                             // co-op: controller 2, or null
+  postFrame2(view, w, h, seq, own) {                 // co-op local test: the guest's view (own = 0: the host's picture)
+    const copy = new Uint8Array(view);
+    postMessage({ type: 'frame2', w, h, seq, own, buf: copy.buffer }, [copy.buffer]);
+  },
   postFrame(view, w, h, seq) {
     if (seq === 1) sendNewEnglishCaches();
     if (seq === 1 && hdPort && !hdSkip)   // enhanced renderer missing from this build, or its setup failed
@@ -126,6 +132,17 @@ self.AC3W = {
     postMessage({ type: 'card', slot, data }, [data.buffer]);
   },
 };
+
+// Development: input recordings the test pages asked for (--record-input
+// /rec/...) go back to the page when the game stops, with their card snapshots.
+function sendRecordings() {
+  if (!DEV || !self.Module) return;
+  const FS = self.Module.FS;
+  if (!FS.analyzePath('/rec').exists) return;
+  const files = [];
+  for (const n of FS.readdir('/rec')) if (n !== '.' && n !== '..' && !n.includes('.run.')) files.push({ name: n, data: FS.readFile('/rec/' + n) });
+  if (files.length) postMessage({ type: 'recording', files }, files.map(f => f.data.buffer));
+}
 
 // English data built by the game during start-up ("<disc>.en.cache") lands in
 // /game/disc (in memory). Send it to the page once, to keep for the next start.
@@ -192,6 +209,7 @@ self.onmessage = async (e) => {
   const m = e.data;
   ctrl = new Int32Array(m.ctrl);
   pad = new Int32Array(m.pad);
+  if (m.pad2) pad2 = new Int32Array(m.pad2);
   ringHead = new Int32Array(m.ring, 0, 2);
   ringData = new Int16Array(m.ring, 8);
   ringFrames = ringData.length >> 1;
@@ -272,7 +290,7 @@ self.onmessage = async (e) => {
         for (const b of blobs) FS.symlink('/game/src/' + b.name, '/game/disc/' + b.name);
         if (patches.length) FS.mount(FS.filesystems.WORKERFS, { blobs: patches }, '/game/translation');
         FS.writeFile('/game/ACE3.BIN', exe);
-        if (extraFiles.length) {
+        if (extraFiles.length || (DEV && m.extraArgs && m.extraArgs.includes('--record-input'))) {
           FS.mkdir('/rec');
           for (const x of extraFiles) FS.writeFile('/rec/' + String(x.name).replace(/[\/\\]/g, '_'), new Uint8Array(x.data));
         }
@@ -281,7 +299,7 @@ self.onmessage = async (e) => {
         FS.chdir('/');
         self.AC3W.progress('boot', 0, 0, 1);
       }],
-      onExit: code => postMessage({ type: 'exit', code }),
+      onExit: code => { sendRecordings(); postMessage({ type: 'exit', code }); },
       onAbort: what => fail('The game stopped (abort): ' + what),
     });
   } catch (err) {

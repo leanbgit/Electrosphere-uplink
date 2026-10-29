@@ -13,6 +13,7 @@
 
 extern int ac3_coop_guest;                 /* 1 = a second, guest-controlled aircraft */
 extern int ac3_coop_view;                  /* 1 = draw the guest's view (the guest's computer) */
+extern int ac3_coop_split;                 /* 1 = show both views (one computer, local test) */
 int  ac3_coop_intercept(ctx_t *ctx, u32 target);   /* 1 = handled the call */
 void ac3_coop_status(char *out, int cap);   /* one-line state, for logs */
 int  ac3_coop_replaying(void);

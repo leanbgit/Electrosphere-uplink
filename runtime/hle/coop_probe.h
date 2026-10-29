@@ -20,8 +20,8 @@
  *   --coop-wfn FUNC FROM-TO FILE  every write (outside the stack) made while
  *                                 FUNC and its callees run
  *   --coop-rfn FUNC FROM-TO FILE  the same for reads
- *   --coop-guest                  second aircraft driven by port 2 (runtime/hle/coop.h)
- *   --coop-view                   with --coop-guest: draw the guest's view instead
+ *   (--coop-guest, --coop-view and --coop-split are parsed in host/main.c:
+ *    they exist in every build, see runtime/hle/coop.h)
  *   --coop-p2 FILE                second controller from another recording
  *                                 (port 2 of an .ac3i file replaces port 2)
  */

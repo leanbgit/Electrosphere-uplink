@@ -93,6 +93,7 @@ if [ "$HD" = 1 ]; then
 fi
 
 cp web/index.html web/style.css web/app.js web/worker.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
+cp web/test/coop.html web/test/coop.js web/test/coop.css "$OUT/"         # development: local co-op test page (not part of site/)
 mkdir -p "$OUT/fonts" && cp web/fonts/* "$OUT/fonts/"
 # Project NEMO's English patches (included with their permission)
 if [ -f web/patches/CD1.xdelta ]; then mkdir -p "$OUT/patches" && cp web/patches/CD?.xdelta "$OUT/patches/"; fi

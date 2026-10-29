@@ -20,6 +20,10 @@ seen in RAM or in a trace; *read* = read from the code; *guess* = still to confi
 | gp+0x524 → 0x80177278 | | |
 | 0x800CBF58 | random seed | read (oracle) |
 
+**The block moves between missions** (0x801771E0 in the first mission tested,
+0x80171484 in another, 2026-10-29): code must always take it from gp+0x514,
+never from a fixed address. The world (gp+0x2E0) and slot table (gp+0x2E8) move too.
+
 The player state block spans at least **0x801771E0–0x801772B4** (all writes in
 that page during a flight field fall inside it). Known fields:
 

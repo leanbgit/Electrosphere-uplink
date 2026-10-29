@@ -2,6 +2,7 @@
 #include "hle/coop_probe.h"
 #endif
 #include "ac3_runtime.h"
+#include "hle/coop.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -250,6 +251,12 @@ int main(int argc, char **argv) {
                     ac3_boot_capture_every((u32)strtoul(argv[++j], NULL, 0));
                 else if (strcmp(argv[j], "--capture-on-video") == 0)
                     ac3_capture_on_video();
+                /* co-op (runtime/hle/coop.h): a second aircraft on controller port 2;
+                 * --coop-view shows the guest's view (the guest's computer);
+                 * --coop-split shows both views (local test page) */
+                else if (strcmp(argv[j], "--coop-guest") == 0) ac3_coop_guest = 1;
+                else if (strcmp(argv[j], "--coop-view") == 0) ac3_coop_view = 1;
+                else if (strcmp(argv[j], "--coop-split") == 0) ac3_coop_view = ac3_coop_split = 1;
 #ifdef AC3_COOP_PROBE
                 else if (ac3_coop_probe_arg(argc, argv, &j)) { }
 #endif

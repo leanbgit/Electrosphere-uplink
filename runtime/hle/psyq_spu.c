@@ -1,3 +1,4 @@
+#include "coop.h"
 #include "spu_backend.h"
 #include "spu_core.h"
 #include "ac3_oracle.h"
@@ -167,7 +168,10 @@ void ac3_spu_state_hash(u64 *h) {
 void ac3_spu_pump(void) {
     if (!spu_ready) return;
     if (!spu || !spu->frames_wanted) return;
-    int want = ac3_oracle_deterministic() ? ac3_spu_field_frames() : spu->frames_wanted();
+    /* Replays and co-op mix a fixed amount per field: the game reads voice
+     * status every frame, so the mix must not follow the audio device's clock
+     * (docs/coop/S1_determinism.md). */
+    int want = ac3_oracle_deterministic() || ac3_coop_guest ? ac3_spu_field_frames() : spu->frames_wanted();
     while (want > 0) {
         s16 buf[1024 * 2];
         int n = want > 1024 ? 1024 : want;

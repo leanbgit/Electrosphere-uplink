@@ -66,9 +66,14 @@ Test recipe for kills (`tools/coop/strip_buttons.py`): `nofire.ac3i` is the sess
 - Per-player results (kill count, score) in the results screen: not looked at.
 - Guest damage display and missile warnings on the guest's own HUD: likely
   already the guest's (they come from its state), not checked.
-- The guest's targeting uses the per-object tables the world update computes
-  relative to the host (0x800C6FD0 etc.): targets far from the host may not be
-  selectable by the guest.
+- ~~The guest's targeting uses per-object tables computed relative to the
+  host~~ **Measured, not a problem** (2026-10-29): with the scripted guest
+  thousands of units from the host, the per-object tables (0x800C6FD0,
+  0x800C6ED0) computed with the guest as "the player" (in the replay) equal the
+  host's on all but 5 frames out of ~8,000, always one bit (0x01000000) on the
+  object the host had just selected. Range and lock checks use the player's
+  position inside the targeting step and the HUD, which already run for the
+  guest. To check again in play with a guest that hunts its own targets.
 - The guest uses the host's aircraft model and loadout.
 - Only the flight tick variant `0x80032F3C` has been exercised; other mission
   types still to check.
@@ -86,3 +91,45 @@ AC3_COOP_DEBUG=1 tools/coop/replay.sh G REC 9000 --coop-guest --coop-p2 p2.ac3i 
 
 `AC3_COOP_DEBUG=1` prints the guest's input map, state block and entity every
 30 updates; `AC3_COOP_NOUPDATE=1` creates the guest but never updates it.
+
+## Fixed 2026-10-29: the state block moves between missions
+
+The first browser test (a different random mission) showed both planes with the
+same speed, missiles, damage and warnings, and linked, sluggish controls. In
+that mission the player's state block is at 0x80171484, not 0x801771E0: the
+guest was sharing the host's real block (and swapping 224 unrelated bytes every
+frame). `coop.c` now takes the block from the game's pointer gp+0x514 every
+time. Checked with the user's recording (native bench and browser build):
+separate speed, missiles and altitude.
+
+## Fixed 2026-10-29 (second browser test): death, camera, lock-on
+
+Found with the user's recording `coop_20261029195939` (a night mission).
+
+- **Guest shot down → the host's screen went into the "shot down" sequence**
+  (explosion close-up, then no HUD and a wreck camera for ~25 s; the host was
+  in fact still flying). The guest's own update runs the game's death branch
+  (`0x80073880`..`0x8007390C`): it bumps the shot-down counter (scene+0x958),
+  stops engine voices (`0x800301A8`, gp+0x32C..0x32F), switches the camera to
+  follow the explosion (`0x80079564` → `0x800793C4`, which writes the camera
+  object world+0xB8..0x19C) and hides the HUD (`0x80035740(0)` sets bit 0 of
+  world+0). Now:
+  - the guest's update works on **the guest's own camera** (the view-private
+    ranges are exchanged around it, not only around the view replay), and the
+    camera range is the whole camera object, world+0xB8..0x1A0;
+  - the shot-down counter, the voice bytes, world+0x28C and world+0 are
+    host-only (the guest's writes are discarded).
+  Checked: the host keeps flying with its HUD and mission timer, as in the solo
+  replay of the same recording; the guest's view shows its own explosion.
+- **The guest could never complete a lock**, and its lock box jumped around.
+  Locking takes several frames: the HUD keeps a state and timer in the first
+  two bytes of each target's record (pointers at 0x800C67A0 + 4·slot) and the
+  lock in progress at gp+0x354..0x35B (state, slot, lock-box animation;
+  `0x800409D4`). The guest's HUD runs in the view replay, whose memory is thrown
+  away, so its progress restarted every frame. The guest now keeps its own copy
+  (exchanged around its update and its replay). Checked: the guest locks
+  (red lock box) and the two computers stay byte-identical (11,900 fields).
+- **"Shared controls until Engage"**: there is no guest plane before the host
+  gets control (around the "Engage" banner); the test page showed the host's
+  picture on the guest's side. The page now dims that picture and says so.
+

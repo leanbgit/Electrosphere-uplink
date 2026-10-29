@@ -8,6 +8,7 @@
 
 int ac3_coop_guest;
 int ac3_coop_view;
+int ac3_coop_split;
 static int coop_debug = -1;
 
 extern void ac3_interpret(ctx_t *ctx, u32 entry);
@@ -30,7 +31,7 @@ extern u32 ac3_vblank_count(void);
 /* Per-player memory: the guest has its own copy, exchanged with the host's
  * around the guest's update. */
 static const struct { u32 addr, len; } per_player[] = {
-    { 0x801771E0u, 0xE0u },   /* player aircraft state (behind gp+0x514..0x524) */
+    { 0,           0xE0u },   /* player aircraft state: where gp+0x514 points (see pp_addr) */
     { 0x800BF3F0u, 0x40u },   /* input map (incl. the 4 bytes at map+0x3C) */
     { 0x800C7BE8u, 0x10u },   /* written by 0x80072114 every frame (position copy) */
     { 0x800C6D60u, 0x18u },   /* targeting state (0x8003A23C); index PP_TARGETING */
@@ -38,23 +39,47 @@ static const struct { u32 addr, len; } per_player[] = {
 };
 #define N_PER_PLAYER (sizeof per_player / sizeof per_player[0])
 #define PP_TARGETING 3
+#define PP_BLOCK     0
+/* The aircraft state block moves from mission to mission (0x801771E0 in the
+ * first random mission, 0x80171484 in another): always take it from the
+ * game's own pointer, gp+0x514 (gp+0x518..0x524 point inside it). */
+#define BLOCK_PTR    (GAME_GP + 0x514u)
+static u32 pp_addr(unsigned i) { return i == PP_BLOCK ? MEM_R32(BLOCK_PTR) : per_player[i].addr; }
 
-/* Host-only memory the player update also writes (engine sound channels, one
- * library word): the guest's writes are discarded. */
-static const struct { u32 addr, len; } host_only[] = {
-    { 0x800C5830u, 0x40u },
-    { 0x800BD0C0u, 0x04u },
+/* Host-only memory the player update also writes: the guest's writes are
+ * discarded. world = 1: an offset from the world pointer. */
+static const struct { u32 addr, len; int world; } host_only[] = {
+    { 0x800C5830u, 0x40u, 0 },   /* engine sound channels */
+    { 0x800BD0C0u, 0x04u, 0 },   /* a library word */
+    /* written when "the player" is shot down (0x80073880..0x800738C4): */
+    { 0x800BFC28u, 0x02u, 0 },   /* scene+0x958: times the player was shot down */
+    { 0x800BCEA0u, 0x04u, 0 },   /* 0x800301A8: screen effect after being shot down */
+    { 0x28Cu,      0x08u, 1 },   /* world+0x28C (0x8006CBA4) */
+    { 0x000u,      0x04u, 1 },   /* world+0: bit 0 hides the HUD (0x80035740, from the shot-down camera 0x80079564) */
 };
+static u32 ho_addr(unsigned i) { return host_only[i].world ? MEM_R32(WORLD_PTR) + host_only[i].addr : host_only[i].addr; }
 #define N_HOST_ONLY (sizeof host_only / sizeof host_only[0])
 
 /* World-structure ranges only the camera and view setup write (relative to
  * the world pointer): the guest's view keeps its own copy between frames. */
 static const struct { u32 off, len; } view_private[] = {
     { 0x2Cu, 0x34u },    /* 0x800332E4: view setup */
-    { 0xB8u, 0x50u },    /* 0x8007B438: camera */
-    { 0x154u, 0x20u },   /* 0x8007B438: camera */
+    { 0xB8u, 0xE8u },    /* the camera object (world+0x28 points here; 0x8007B438, and
+                            0x800793C4 when switching camera mode writes up to +0x19C) */
 };
 #define N_VIEW_PRIVATE (sizeof view_private / sizeof view_private[0])
+static void guest_camera_swap(u32 host, u32 mine);
+
+/* The HUD's lock-on progress. Locking takes several frames: the HUD code
+ * (0x8003F2CC, 0x800409D4, 0x80040A18) keeps a state and a timer in the first
+ * two bytes of each target's record (pointers at 0x800C67A0 + 4 * slot) and
+ * the lock in progress at gp+0x354..0x35B (0x800BCEC8: state, target slot,
+ * and the lock box's shrinking animation, 0x800409D4). The guest needs its
+ * own, kept from one replay to the next, or its lock never completes. */
+#define HUD_GLOB       0x800BCEC8u
+#define HUD_GLOB_LEN   8u
+#define HUD_RECS       0x800C67A0u
+static void guest_hud_swap(void);
 
 static struct {
     int dead;              /* destroyed this mission: spectating until the next one */
@@ -66,7 +91,11 @@ static struct {
     u8  keep[N_HOST_ONLY][0x40];
     /* the guest's view (S3) */
     int view_on, cam_valid;
-    u8  cam[N_VIEW_PRIVATE][0x50];
+    u8  cam[N_VIEW_PRIVATE][0x100];
+    /* the HUD's lock-on progress (see guest_hud_swap) */
+    int hud_valid;
+    u8  hud_glob[HUD_GLOB_LEN];
+    u8  hud_rec[64][2];
     u8 *snap_ram, *keep_buf;
     u8  snap_scratch[1024];
     ctx_t snap_ctx;
@@ -99,8 +128,10 @@ static int create_guest(u32 slots) {
     G.handle = (h & ~0x3Fu) | 1u;
     MEM_W32(mine, G.handle);
     MEM_W32(mine + 8, MEM_R32(mine + 8) + (150u << 12));     /* 150 units to the side */
-    for (unsigned i = 0; i < N_PER_PLAYER; i++) copy_out(per_player[i].addr, G.mine[i], per_player[i].len);
+    for (unsigned i = 0; i < N_PER_PLAYER; i++) copy_out(pp_addr(i), G.mine[i], per_player[i].len);
     G.live = 1;
+    G.cam_valid = 0;          /* the world (and its camera) moves between missions */
+    G.hud_valid = 0;
     G.flight_table = slots;
     G.created_field = ac3_vblank_count();
     G.updates = 0;
@@ -138,12 +169,53 @@ static void guest_targeting(ctx_t *ctx) {
     MEM_W32(cam + 0x18u, MEM_R32(args + 0x14));
 }
 
+/* Exchange the camera ranges of the world structure with the guest's copy.
+ * The first time in a mission the guest's copy starts as the host's, pointed
+ * at the guest's entity. */
+static void guest_camera_swap(u32 host, u32 mine) {
+    u32 w = MEM_R32(WORLD_PTR);
+    if (!ram_ptr(w)) return;
+    if (!G.cam_valid) {
+        for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) {
+            copy_out(w + view_private[i].off, G.cam[i], view_private[i].len);
+            for (u32 o = 0; o + 4 <= view_private[i].len; o += 4) {
+                u8 *b = G.cam[i] + o;
+                u32 v = (u32)b[0] | (u32)b[1] << 8 | (u32)b[2] << 16 | (u32)b[3] << 24;
+                if (v >= host && v < host + SLOT_SIZE) {
+                    v = mine + (v - host);
+                    b[0] = (u8)v; b[1] = (u8)(v >> 8); b[2] = (u8)(v >> 16); b[3] = (u8)(v >> 24);
+                }
+            }
+        }
+        G.cam_valid = 1;
+    }
+    for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) exchange(w + view_private[i].off, G.cam[i], view_private[i].len);
+}
+
+/* Exchange the HUD's lock-on state with the guest's copy (which starts as a
+ * copy of the host's, the first time in a mission). */
+static void guest_hud_swap(void) {
+    if (!G.hud_valid) {
+        copy_out(HUD_GLOB, G.hud_glob, HUD_GLOB_LEN);
+        for (u32 t = 0; t < 64u; t++) {
+            u32 r = MEM_R32(HUD_RECS + 4u * t);
+            if (ram_ptr(r)) copy_out(r, G.hud_rec[t], 2);
+        }
+        G.hud_valid = 1;
+    }
+    exchange(HUD_GLOB, G.hud_glob, HUD_GLOB_LEN);
+    for (u32 t = 0; t < 64u; t++) {
+        u32 r = MEM_R32(HUD_RECS + 4u * t);
+        if (ram_ptr(r)) exchange(r, G.hud_rec[t], 2);
+    }
+}
+
 static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (coop_debug < 0) { const char *e = getenv("AC3_COOP_DEBUG"); coop_debug = e && *e && *e != '0'; }
     u32 slots = MEM_R32(SLOT_TABLE);
     if (!ram_ptr(slots)) return;
     u32 host = MEM_R32(slots), mine = MEM_R32(slots + 4);
-    if (!ram_ptr(host) || !ram_ptr(mine)) return;
+    if (!ram_ptr(host) || !ram_ptr(mine) || !ram_ptr(pp_addr(PP_BLOCK))) return;
     G.last_update_field = ac3_vblank_count();
 
     /* Destroyed (crash, shot down): the game cleared its live bit. The guest
@@ -161,10 +233,16 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (!G.live && (G.dead || !create_guest(slots))) return;
 
     /* swap in the guest */
-    for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_out(host_only[i].addr, G.keep[i], host_only[i].len);
-    for (unsigned i = 0; i < N_PER_PLAYER; i++) exchange(per_player[i].addr, G.mine[i], per_player[i].len);
+    for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_out(ho_addr(i), G.keep[i], host_only[i].len);
+    for (unsigned i = 0; i < N_PER_PLAYER; i++) exchange(pp_addr(i), G.mine[i], per_player[i].len);
     MEM_W32(slots, mine);
     MEM_W32(slots + 4, host);
+
+    /* The player update also writes the camera: when "the player" is shot
+     * down it switches it to follow the explosion (0x80077878 writes
+     * world+0xB8). So the guest's update works on the guest's camera too. */
+    guest_camera_swap(host, mine);
+    guest_hud_swap();
 
     ctx_t saved = *ctx;
     call_guest(ctx, INPUT_MAP_FN, CTRL_PORT2, 0x800BF3F0u, 0x800BF42Cu, 0);
@@ -180,9 +258,9 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (coop_debug && G.updates % 30u == 0) {
         u32 e = MEM_R32(slots);   /* still the guest's entity here */
         printf("coop: field %u guest missiles %u (host %u)\n", ac3_vblank_count(),
-               MEM_R16U(0x801771E0u + 0xB4u), (u32)(G.mine[0][0xB4] | G.mine[0][0xB5] << 8));
+               MEM_R16U(pp_addr(PP_BLOCK) + 0xB4u), (u32)(G.mine[0][0xB4] | G.mine[0][0xB5] << 8));
         printf("coop: field %u guest block", ac3_vblank_count());
-        for (u32 i = 0; i < 0x40u; i += 4) printf(" %08X", MEM_R32(0x801771E0u + i));
+        for (u32 i = 0; i < 0x40u; i += 4) printf(" %08X", MEM_R32(pp_addr(PP_BLOCK) + i));
         printf("\n");
         printf("coop: field %u guest entity", ac3_vblank_count());
         for (u32 i = 0; i < 0x58u; i += 4) printf(" %08X", MEM_R32(e + i));
@@ -191,10 +269,12 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     *ctx = saved;             /* the host's results (v0/v1) stand */
 
     /* swap the host back */
+    guest_hud_swap();
+    guest_camera_swap(host, mine);
     MEM_W32(slots, host);
     MEM_W32(slots + 4, mine);
-    for (unsigned i = 0; i < N_PER_PLAYER; i++) exchange(per_player[i].addr, G.mine[i], per_player[i].len);
-    for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_in(host_only[i].addr, G.keep[i], host_only[i].len);
+    for (unsigned i = 0; i < N_PER_PLAYER; i++) exchange(pp_addr(i), G.mine[i], per_player[i].len);
+    for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_in(ho_addr(i), G.keep[i], host_only[i].len);
     G.updates++;
 }
 
@@ -373,12 +453,13 @@ static void view_replay(ctx_t *ctx) {
     memcpy(ac3_scratch, G.snap_scratch, sizeof G.snap_scratch);
     *ctx = G.snap_ctx;
     u32 slots = MEM_R32(SLOT_TABLE), w = MEM_R32(WORLD_PTR);
-    for (unsigned i = 0; i < N_PER_PLAYER; i++) copy_in(per_player[i].addr, G.mine[i], per_player[i].len);
+    for (unsigned i = 0; i < N_PER_PLAYER; i++) copy_in(pp_addr(i), G.mine[i], per_player[i].len);
     u32 host = MEM_R32(slots), mine = MEM_R32(slots + 4);
     MEM_W32(slots, mine);
     MEM_W32(slots + 4, host);
     if (G.cam_valid)
         for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_in(w + view_private[i].off, G.cam[i], view_private[i].len);
+    guest_hud_swap();         /* the guest's lock-on progress in (this RAM is thrown away after) */
     /* The camera follows "the player" through pointers into the host's entity
      * (world+0xEC -> its position): point them at the guest's entity. */
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++)
@@ -398,6 +479,7 @@ static void view_replay(ctx_t *ctx) {
 
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_out(w + view_private[i].off, G.cam[i], view_private[i].len);
     G.cam_valid = 1;
+    guest_hud_swap();         /* ... and out, with this frame's progress */
     /* The HUD code decides lock-on while it draws (0x8003F2CC writes the
      * locked target to 0x800C6D72, plus 0x800C6D68..71); the next frame's
      * player update and targeting read it. So the replay runs on both

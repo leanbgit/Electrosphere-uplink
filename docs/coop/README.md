@@ -8,6 +8,27 @@ the project's `COOP_ROADMAP.md`; findings so far:
 - [S2_guest.md](S2_guest.md): spike S2, a second aircraft flown from controller port 2
 - [S3_view.md](S3_view.md): spike S3, the guest's own view
 
+## Local co-op test page (the Phase 2 checkpoint)
+
+`web/test/coop.html`, copied into `web/dist-public/` by `platform/web/build.sh`
+(not part of `site/`). Open it from the same address as the game, e.g.
+`http://localhost:8080/coop.html` with `serve.bat`: it uses the discs, English
+data and memory card the main page remembered (the card is only read).
+
+- Player 1 (host) and player 2 (guest) each pick a source: keyboard (the main
+  page's default keys), a gamepad, or nothing.
+- Both views side by side; original graphics only for now.
+- "Record this session" records both controllers (`--record-input`); the files
+  are offered for download when you press Stop. Replay them with the bench
+  (`--coop-guest`, plus `--coop-view` for the guest's view) to reproduce a
+  session exactly.
+- The game gets `--coop-guest --coop-split` (development option, ignored on the
+  website). Co-op switches are parsed in `host/main.c` in every build.
+
+`platform/web/run_worker_node.js ... --game-args "--coop-guest --coop-split"`
+runs the same thing under Node; with `--shot-every N` it also writes the
+guest's view as `guest_NNNNNN.ppm`.
+
 ## The headless bench
 
 A native build of the website's engine (interpreter-only: it runs the player's

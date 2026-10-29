@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Co-op Test</title>
+<!-- Development tool (co-op Phase 2), not part of the site. One game, two
+     players on one PC: player 1 is the host, player 2 the co-op guest on
+     controller port 2. Both views side by side. It uses the discs, English data
+     and memory card the main page remembered in this browser, so open it from
+     the same address as the game (e.g. http://localhost:8080/coop.html).
+     The memory card is only read: nothing this page does is saved to it. -->
+<link rel="stylesheet" href="coop.css">
+<main>
+  <h1>Co-op test</h1>
+  <p class="dim">One game, two planes. Player 1 is the host and controls menus and story choices; player 2's plane joins in
+    each mission once player 1 has control. Fly into a mission with player 1, then try player 2.</p>
+
+  <section>
+    <div class="row">
+      <label>Player 1 (host) <select id="src1"></select></label>
+      <label>Player 2 (guest) <select id="src2"></select></label>
+      <label><input type="checkbox" id="record"> Record this session (both controllers)</label>
+      <button id="start" disabled>Start</button>
+      <button id="stop" class="sec" disabled>Stop</button>
+      <span id="status" class="dim">Checking for remembered discs…</span>
+    </div>
+  </section>
+
+  <section class="views">
+    <figure class="p1"><figcaption><b class="p1">Player 1 · host</b><span id="ro1" class="dim"></span></figcaption><canvas id="v1"></canvas></figure>
+    <figure class="p2"><figcaption><b class="p2">Player 2 · guest</b><span id="ro2" class="dim">no plane yet: joins when player 1 gets control (around "Engage"); until then this shows player 1's view, dimmed</span></figcaption><canvas id="v2"></canvas></figure>
+  </section>
+
+  <section>
+    <h2>Keyboard</h2>
+    <table class="keys"><tbody id="keytable"></tbody></table>
+    <p class="dim gap">Gamepads use the standard layout (Cross = bottom button). A gamepad shows up in the
+      lists after you press one of its buttons.</p>
+    <p id="downloads"></p>
+  </section>
+
+  <section>
+    <h2>Log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+<script src="coop.js"></script>
