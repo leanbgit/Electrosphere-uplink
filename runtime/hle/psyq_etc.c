@@ -1,3 +1,4 @@
+#include "coop.h"
 #include "hle.h"
 #include "gpu_backend.h"
 #include "spu_backend.h"
@@ -33,6 +34,7 @@ void ac3_frame_advance(ctx_t *ctx) {
     if (vsync_callback_fn && !callbacks_stopped)
         ac3_call_indirect(ctx, vsync_callback_fn);
     if (gpu->frame_begin) gpu->frame_begin();
+    ac3_coop_field();          /* co-op guest lifecycle (coop.c) */
     ac3_boot_frame_hook();
 }
 

@@ -18,6 +18,8 @@ extern u32 ac3_vblank_count(void);
 #define PLAYER_UPDATE  0x800729DCu         /* first call of the flight tick */
 #define INPUT_MAP_FN   0x80028C24u         /* (controller, map, map+0x3C): applies the button config */
 #define CTRL_PORT2     0x800BF388u         /* the game's decoded record for controller port 2 */
+#define TARGETING_FN   0x8003A23Cu         /* flight tick: lock-on / target selection */
+#define CAM_STATE_PTR  0x800BD098u         /* -> the player's camera/target state (block+0x98) */
 #define SLOT_SIZE      0x58u               /* slots 0 and 1 */
 #define LIVE           0x10000u            /* handle bit: slot in use */
 #define WORLD_PTR      (GAME_GP + 0x2E0u)  /* world/view state */
@@ -31,8 +33,11 @@ static const struct { u32 addr, len; } per_player[] = {
     { 0x801771E0u, 0xE0u },   /* player aircraft state (behind gp+0x514..0x524) */
     { 0x800BF3F0u, 0x40u },   /* input map (incl. the 4 bytes at map+0x3C) */
     { 0x800C7BE8u, 0x10u },   /* written by 0x80072114 every frame (position copy) */
+    { 0x800C6D60u, 0x18u },   /* targeting state (0x8003A23C); index PP_TARGETING */
+    { 0x800C6EC0u, 0x10u },   /* targeting state (0x8003A23C) */
 };
 #define N_PER_PLAYER (sizeof per_player / sizeof per_player[0])
+#define PP_TARGETING 3
 
 /* Host-only memory the player update also writes (engine sound channels, one
  * library word): the guest's writes are discarded. */
@@ -52,9 +57,10 @@ static const struct { u32 off, len; } view_private[] = {
 #define N_VIEW_PRIVATE (sizeof view_private / sizeof view_private[0])
 
 static struct {
+    int dead;              /* destroyed this mission: spectating until the next one */
+    u32 deaths, last_mode, flight_table, last_update_field;
     int live;              /* guest aircraft exists in this flight */
     u32 handle;            /* its handle (slot 1) */
-    u32 host_handle;       /* the host's handle when it was created */
     u32 created_field, updates;
     u8  mine[N_PER_PLAYER][0x100];   /* the guest's copy of each per-player range */
     u8  keep[N_HOST_ONLY][0x40];
@@ -95,7 +101,7 @@ static int create_guest(u32 slots) {
     MEM_W32(mine + 8, MEM_R32(mine + 8) + (150u << 12));     /* 150 units to the side */
     for (unsigned i = 0; i < N_PER_PLAYER; i++) copy_out(per_player[i].addr, G.mine[i], per_player[i].len);
     G.live = 1;
-    G.host_handle = h;
+    G.flight_table = slots;
     G.created_field = ac3_vblank_count();
     G.updates = 0;
     printf("coop: guest aircraft created in slot 1 (handle 0x%05X) at field %u\n", G.handle, G.created_field);
@@ -107,20 +113,52 @@ static void call_guest(ctx_t *ctx, u32 fn, u32 a0, u32 a1, u32 a2, u32 a3) {
     ac3_interpret(ctx, fn);
 }
 
+/* The flight tick's targeting step, for the guest (the tick runs it for the
+ * host after the world update; 0x80032F3C):
+ *     cam = *CAM_STATE_PTR;  args = { cam[0x1C], cam[8], cam[0xC], cam[0x10], out, target }
+ *     0x8003A23C(&args);     cam[0x18] = args.target   (the lock-on the launch code uses)
+ * The camera part of the result (view+0xBC) is the view's business: skipped. */
+static void guest_targeting(ctx_t *ctx) {
+    u32 cam = MEM_R32(CAM_STATE_PTR);
+    if (!ram_ptr(cam)) return;
+    u32 args = (ctx->r[29] - 0x80u) & ~7u;     /* scratch below the caller's stack */
+    MEM_W32(args + 0x00, MEM_R32(cam + 0x1Cu));
+    MEM_W32(args + 0x04, MEM_R32(cam + 0x08u));
+    MEM_W32(args + 0x08, MEM_R32(cam + 0x0Cu));
+    MEM_W32(args + 0x0C, MEM_R32(cam + 0x10u));
+    MEM_W32(args + 0x10, MEM_R32(cam + 0x18u));   /* not read before being written; keeps it tidy */
+    MEM_W32(args + 0x14, MEM_R32(cam + 0x18u));
+    u32 sp = ctx->r[29];
+    ctx->r[29] = args - 0x10u;                  /* the tick's frame: args at sp+0x10 */
+    call_guest(ctx, TARGETING_FN, args, 0, 0, 0);
+    ctx->r[29] = sp;
+    if (coop_debug > 0 && G.updates % 30u == 0)
+        printf("coop: field %u guest targeting in %08X %08X %08X %08X -> out %08X target %08X\n", ac3_vblank_count(),
+               MEM_R32(args), MEM_R32(args + 4), MEM_R32(args + 8), MEM_R32(args + 12), MEM_R32(args + 0x10), MEM_R32(args + 0x14));
+    MEM_W32(cam + 0x18u, MEM_R32(args + 0x14));
+}
+
 static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (coop_debug < 0) { const char *e = getenv("AC3_COOP_DEBUG"); coop_debug = e && *e && *e != '0'; }
     u32 slots = MEM_R32(SLOT_TABLE);
     if (!ram_ptr(slots)) return;
     u32 host = MEM_R32(slots), mine = MEM_R32(slots + 4);
     if (!ram_ptr(host) || !ram_ptr(mine)) return;
-    u32 hh = MEM_R32(host);
-    /* a new flight (the host's handle changed) or slot 1 reused: start over */
-    if (G.live && (hh != G.host_handle || MEM_R32(mine) != G.handle)) {
-        if ((MEM_R32(mine) & ~0x3Fu) != (G.handle & ~0x3Fu) || hh != G.host_handle)
-            printf("coop: guest aircraft gone at field %u (slot 1 now 0x%05X)\n", ac3_vblank_count(), MEM_R32(mine));
+    G.last_update_field = ac3_vblank_count();
+
+    /* Destroyed (crash, shot down): the game cleared its live bit. The guest
+     * watches the host until the next mission. */
+    if (G.live && !(MEM_R32(mine) & LIVE)) {
+        printf("coop: guest aircraft destroyed at field %u\n", ac3_vblank_count());
+        G.live = 0;
+        G.dead = 1;
+        G.deaths++;
+    }
+    if (G.live && (MEM_R32(mine) & ~LIVE) != (G.handle & ~LIVE)) {   /* slot 1 taken over (not seen so far) */
+        printf("coop: slot 1 reused by the game at field %u (0x%05X)\n", ac3_vblank_count(), MEM_R32(mine));
         G.live = 0;
     }
-    if (!G.live && !create_guest(slots)) return;
+    if (!G.live && (G.dead || !create_guest(slots))) return;
 
     /* swap in the guest */
     for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_out(host_only[i].addr, G.keep[i], host_only[i].len);
@@ -135,8 +173,10 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
         for (u32 i = 0; i < 0x40u; i += 4) printf(" %08X", MEM_R32(0x800BF3F0u + i));
         printf("\n");
     }
-    if (!getenv("AC3_COOP_NOUPDATE"))       /* research switch: create the guest but never update it */
+    if (!getenv("AC3_COOP_NOUPDATE")) {     /* research switch: create the guest but never update it */
         call_guest(ctx, PLAYER_UPDATE, entry->r[4], entry->r[5], entry->r[6], entry->r[7]);
+        guest_targeting(ctx);
+    }
     if (coop_debug && G.updates % 30u == 0) {
         u32 e = MEM_R32(slots);   /* still the guest's entity here */
         printf("coop: field %u guest missiles %u (host %u)\n", ac3_vblank_count(),
@@ -311,8 +351,9 @@ static void view_mark(ctx_t *ctx, u32 resume_pc) {
 
 /* After the host's last drawing call: the frame's memory is now exactly the
  * host's. Replay the rest of the frame for the guest from the saved state
- * (the tick after the player update, camera, drawing), keep the picture it
- * drew, then put the host's memory back. */
+ * (the tick after the player update, camera, drawing), keep what the guest's
+ * HUD decided (lock-on, both computers) and the picture it drew (guest's
+ * computer only), then put the host's memory back. */
 static void view_replay(ctx_t *ctx) {
     if (!G.view_on) return;
     G.view_on = 0;
@@ -357,6 +398,18 @@ static void view_replay(ctx_t *ctx) {
 
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_out(w + view_private[i].off, G.cam[i], view_private[i].len);
     G.cam_valid = 1;
+    /* The HUD code decides lock-on while it draws (0x8003F2CC writes the
+     * locked target to 0x800C6D72, plus 0x800C6D68..71); the next frame's
+     * player update and targeting read it. So the replay runs on both
+     * computers and these bytes become part of the guest's state. */
+    for (u32 a = 0x800C6D68u; a <= 0x800C6D72u; a++) G.mine[PP_TARGETING][a - 0x800C6D60u] = (u8)MEM_R8U(a);
+    if (!ac3_coop_view) {                       /* host's computer: no picture to keep */
+        memcpy(ac3_ram, host_ram, AC3_RAM_SIZE);
+        memcpy(ac3_scratch, host_scratch, sizeof host_scratch);
+        *ctx = host_ctx;
+        G.views++;
+        return;
+    }
     u32 glo = 0, ghi = 0;
     int same = draw_buffer(&glo, &ghi) && glo == lo && ghi == hi;
     if (same) {
@@ -380,13 +433,37 @@ static void view_replay(ctx_t *ctx) {
 
 int ac3_coop_replaying(void) { return G.replaying; }
 
+/* Once per field (psyq_etc.c). A mission is over when
+ *   - the slot table moves (menus and briefings use their own), or
+ *   - the player update has not run for 2 seconds and the host's player mode
+ *     is no longer 1 (results, mission failed; a pause keeps mode 1), or
+ *   - the host's player mode goes back to 2 (the next mission's intro).
+ * The guest's aircraft goes away with it, and a guest that was destroyed may
+ * fly again in the next mission. */
+void ac3_coop_field(void) {
+    if (!ac3_coop_guest) return;
+    u32 mode_ptr = MEM_R32(GAME_GP + 0x520u);
+    u32 mode = ram_ptr(mode_ptr) ? MEM_R32(mode_ptr + 4) : 0;
+    int left = MEM_R32(SLOT_TABLE) != G.flight_table ||
+               (ac3_vblank_count() - G.last_update_field > 120u && mode != 1u);
+    int restart = mode == 2u && G.last_mode != 2u;
+    G.last_mode = mode;
+    if (!(G.live || G.dead) || !(left || restart)) return;
+    if (G.live && ram_ptr(G.flight_table)) {
+        u32 mine = MEM_R32(G.flight_table + 4);
+        if (ram_ptr(mine) && MEM_R32(mine) == G.handle) MEM_W32(mine, G.handle & ~LIVE);   /* free slot 1 */
+    }
+    printf("coop: mission over at field %u (%s); guest aircraft %s\n", ac3_vblank_count(),
+           left ? "left flight" : "next mission starting", G.live ? "removed" : "may fly again");
+    G.live = 0;
+    G.dead = 0;
+}
+
 int ac3_coop_intercept(ctx_t *ctx, u32 target) {
-    if (ac3_coop_view) {
-        if (!G.replaying && target == DRAW_LAST_FN && ac3_guest_ra == DRAW_LAST_RA && G.view_on) {
-            ac3_interpret(ctx, target);
-            view_replay(ctx);
-            return 1;
-        }
+    if (!G.replaying && target == DRAW_LAST_FN && ac3_guest_ra == DRAW_LAST_RA && G.view_on) {
+        ac3_interpret(ctx, target);
+        view_replay(ctx);
+        return 1;
     }
     if (target != PLAYER_UPDATE || G.replaying) return 0;
     u32 resume = ac3_guest_ra;           /* where the tick continues */
@@ -395,11 +472,11 @@ int ac3_coop_intercept(ctx_t *ctx, u32 target) {
     ctx_t host_result = *ctx;
     guest_update(ctx, &entry);
     *ctx = host_result;
-    if (ac3_coop_view) view_mark(ctx, resume);
+    view_mark(ctx, resume);              /* both computers: see view_replay */
     return 1;
 }
 
 void ac3_coop_status(char *out, int cap) {
-    snprintf(out, (size_t)cap, "guest %s handle 0x%05X created %u updates %u views %u",
-             G.live ? "live" : "none", G.handle, G.created_field, G.updates, G.views);
+    snprintf(out, (size_t)cap, "guest %s handle 0x%05X created %u updates %u views %u deaths %u",
+             G.live ? "live" : G.dead ? "destroyed" : "none", G.handle, G.created_field, G.updates, G.views, G.deaths);
 }

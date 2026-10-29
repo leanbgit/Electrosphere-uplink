@@ -40,26 +40,40 @@ line with the stick ignored).
 | World reacts to the guest | yes: from field 8,740 the two runs differ in one enemy aircraft, i.e. the AI noticed the guest |
 | Deterministic | yes (same input → same hashes) |
 
+## Teammate rules (2026-10-28, later)
+
+| Topic | How it works now | Evidence |
+|---|---|---|
+| Creation | slot 1, when the host first has control (player mode 1) | field 6,109 |
+| Destroyed | the game's own destroy routine (`0x800747E0`) clears its live bit; the guest then **watches the host until the mission is over** (no respawn) | crash at 8,449 |
+| Mission over | slot table moves, or no player update for 2 s while the host's mode is not 1, or the host's mode returns to 2 (next intro); the guest's aircraft is removed and it may fly again next mission | 16,864 |
+| Missiles | the launch code (`0x800685C0`, owner handle at +0x134 of the missile) runs inside the guest's update: **real missiles owned by the guest** | owner 0x1E241 in the pool |
+| Targeting | the tick's targeting step `0x8003A23C` also runs in the guest's turn; its state (0x800C6D60, 0x800C6EC0) is per player | guest selects slot 47 like the host |
+| Lock-on | **decided by the HUD code while it draws** (`0x8003F2CC` writes the locked target to 0x800C6D72, plus 0x800C6D68–71). So the guest's camera + HUD replay (S3) now runs on **both** computers, and those bytes become the guest's state | guest launches with targets 0x30, 0x32, 0x06, 0x22 |
+| Kill credit | the mission's destroyed-object log (`0x80048758`, count at 0x800BF692) **does not check who fired**: it counts objects flagged 0x800 in the per-object table at 0x800C6FD0, set at mission start | with the host unable to fire, the log gains the guest's kills at 7,155, 8,157, 12,445 |
+| Sync | host's and guest's computers byte-identical (RAM, scratchpad, VRAM, SPU) | 40,000 fields; the kill scenario 14,000 fields |
+
+Rejected: running `0x8007F0F8` (lock-on/radar lists) a second time for the guest.
+It links entries into lists the world update shares; with two runs per frame a
+list became circular and the world update looped forever at field 11,260.
+
+Test recipe for kills (`tools/coop/strip_buttons.py`): `nofire.ac3i` is the session recording with Circle
+(missile) removed from port 1 between fields 6,110 and 14,000, and the guest is
+`make_p2.py --copy` of the original, so only the guest fires.
+
 ## Known gaps (next steps)
 
-- Confirm guest missiles hit and get credited (find the missile pool; kill credit).
-- Guest death: what happens when slot 1 is shot down (mode changes, respawn rules).
-- The guest uses the host's aircraft model and loadout (copy of the host).
-- Mission end / next mission: the guest is recreated when the host's handle
-  changes; check across a whole session and in other mission types.
-- Only the flight tick variant `0x80032F3C` has been exercised.
-- Player mode is not kept in sync after creation (end-of-mission mode 4,
-  scripted sections).
-- S3: the guest's own view (camera + HUD).
-- **Each player shown to the other as a named ally** (requirement, 2026-10-28):
-  the host sees the guest's plane with the guest's name, like the allied NPCs
-  (e.g. "F15XA / Keith" with a FRND box and a friendly radar marker), and the
-  guest sees the host the same way. First test: giving the guest entity the
-  type word of the allied NPC in slot 3 (0x004) does **not** create a label, so
-  the labels come from a separate list of named friendly units (mission data
-  or a HUD target list), still to find. Plan: find that list and the name
-  table, add an entry for the other player with their name (the English font
-  is plain ASCII), keep the guest's name in the session settings.
+- Per-player results (kill count, score) in the results screen: not looked at.
+- Guest damage display and missile warnings on the guest's own HUD: likely
+  already the guest's (they come from its state), not checked.
+- The guest's targeting uses the per-object tables the world update computes
+  relative to the host (0x800C6FD0 etc.): targets far from the host may not be
+  selectable by the guest.
+- The guest uses the host's aircraft model and loadout.
+- Only the flight tick variant `0x80032F3C` has been exercised; other mission
+  types still to check.
+- Testing past the first mission needs recordings made with a guest present:
+  the guest changes the world, so a solo recording goes off script.
 
 ## Bench recipe
 

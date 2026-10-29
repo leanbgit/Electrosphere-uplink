@@ -113,3 +113,18 @@ and a per-player position copy at 0x800C7BE8.
 **Still to find:** the missile pool, the target-selection code, kill credit,
 and where missiles are launched from (the guest's missile counter drops, so
 probably inside the player update).
+
+## Weapons, targeting, kills (2026-10-28, later)
+
+| Address | Meaning | Confidence |
+|---|---|---|
+| 0x80173C7C | missile pool (also passed to `0x8007F0F8`); missile owner handle at +0x134, target slot at +0x138 (-1 = unguided), target pointers at +0x13C/+0x140 | measured |
+| `0x800685C0(owner, pos, launcher+0x38, target)` | creates a missile; called through `0x80068800` from the weapon code `0x80071950` | measured |
+| [gp+0x524]+0x18 = 0x80177290 | locked target (player block +0xB0), read by the launch code | measured |
+| [gp+0x524]+0x1C = 0x80177294 | missiles left | measured |
+| `0x8003A23C(args)` | flight tick targeting; args = cam[0x1C], cam[8], cam[0xC], cam[0x10], out (target shown), lock | measured |
+| 0x800C6D60–0x800C6D77, 0x800C6EC0–0x800C6ECF | targeting state (per player) | measured |
+| 0x800C6D72 | locked target slot, written **by the HUD drawing code** `0x8003F2CC` (0xFF = none) | measured |
+| 0x800C6ED0[64], 0x800C6FD0[64] | per-object targeting tables (bit 0x800 of 0x800C6FD0[i] = counts for the mission) | measured |
+| 0x800BF692 | destroyed-object count of the mission's log (`0x80048758`) | measured |
+| `0x800747E0` | destroys an object (clears the live bit) | measured |

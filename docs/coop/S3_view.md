@@ -5,7 +5,9 @@ overlay and the display VRAM) and `runtime/hle/psyq_gpu.c` (`draw_ot`).
 Switched on in the bench with `--coop-guest --coop-view` (what the guest's
 computer will do). Measured on `session_20261023_153603.ac3i`.
 
-**Status: works.** The guest's computer shows the guest's camera and HUD
+**Status: works.** Since the lock-on work (S2_guest.md) the replay runs on
+**both** computers, because the HUD code decides lock-on while it draws; only
+the guest's computer keeps the picture. The guest's computer shows the guest's camera and HUD
 while its game memory, scratchpad, video memory and sound state stay
 byte-identical to the host's, measured every field for 40,000 fields (about
 11 minutes of play, several missions, disc 2 included). Cost about 3–5% of
