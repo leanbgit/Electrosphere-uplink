@@ -39,6 +39,7 @@ static const struct { u32 addr, len; } per_player[] = {
 };
 #define N_PER_PLAYER (sizeof per_player / sizeof per_player[0])
 #define PP_TARGETING 3
+#define PP_ALERT     4         /* +0xC = 0x800C6ECC: bit 0 "an enemy is locking on", bit 1 "missile close" */
 #define PP_BLOCK     0
 /* The aircraft state block moves from mission to mission (0x801771E0 in the
  * first random mission, 0x80171484 in another): always take it from the
@@ -69,6 +70,9 @@ static const struct { u32 off, len; } view_private[] = {
 };
 #define N_VIEW_PRIVATE (sizeof view_private / sizeof view_private[0])
 static void guest_camera_swap(u32 host, u32 mine);
+static int ground_vs_guest;     /* a ground weapon aiming at the guest runs with the players exchanged */
+static int players_exchanged;   /* slots 0 and 1 exchanged for an enemy's turn (see launch_real_slots) */
+static u32 ai_guest_group;     /* enemy AI: bit n = aircraft in slot n is the guest's this frame */
 
 /* The HUD's targets, seen from one player. Each target has a 0x34-byte
  * record (pointers at 0x800C67A0 + 4 * slot) filled relative to "the player":
@@ -87,6 +91,8 @@ static void guest_camera_swap(u32 host, u32 mine);
 #define HUD_GLOB_LEN   8u
 #define HUD_RECS       0x800C67A0u
 #define HUD_REC_LEN    0x34u     /* the whole target record */
+#define WARN_STATE     0x800C7180u
+#define HUD_WARN       5u        /* index of WARN_STATE in hud_static */
 /* HUD state the drawing code keeps from one frame to the next, seen from one
  * player (0x8003D1A4, 0x8003DA70, 0x8003DD08, 0x8003D450, 0x800309A8:
  * per-target arrays; 0x800662B4: the gun reticle). */
@@ -99,6 +105,14 @@ static const struct { u32 addr, len; } hud_static[] = {
      * bullets fired some frames ago have got to */
     { 0x800C79C8u, 0x200u },
     { 0x800BD070u, 0x04u },    /* gp+0x4FC: ring index, gp+0x4FD: reticle entry */
+    /* The warning on screen (0x80042544, from the HUD preparation 0x8003A0B4):
+     * each frame it picks the most urgent of the player's warnings (missile
+     * alert, lock-on, off course, altitude, PULL UP, autopilot, ...) and
+     * 0x8004287C keeps it at 0x800C7180 (number, time left, two animation
+     * records) until it runs out; a more urgent one replaces it. Kept per
+     * player, or the host's warning stayed on the guest's screen. */
+    { WARN_STATE,  0x10u },
+    { 0x800BCFC0u, 0x01u },    /* gp+0x44C: frames too low, PULL UP after 30 */
 };
 #define N_HUD_STATIC (sizeof hud_static / sizeof hud_static[0])
 static void guest_hud_swap(void);
@@ -155,6 +169,7 @@ static int create_guest(u32 slots) {
     G.live = 1;
     G.cam_valid = 0;          /* the world (and its camera) moves between missions */
     G.hud_valid = 0;
+    ai_guest_group = 0;
     G.flight_table = slots;
     G.created_field = ac3_vblank_count();
     G.updates = 0;
@@ -235,6 +250,47 @@ static void guest_hud_swap(void) {
     }
 }
 
+/* Mission hazards that hurt "the player". The mission rules (0x800540E0, once
+ * per frame) look at slot 0 only; most of what they check is a mission goal
+ * or failure (see mission_rules_for_both), but in mission scene 0x2A flying
+ * too low costs health: 0x80076FA4 takes a point off slot 0 (and shakes the
+ * screen, host-only memory) when, with t = frame counter (world+0xC) & 31:
+ *     height (+0xC) >= 0 and t == 0, > 0x01387FFF and t == 16,
+ *     > 0x01F3FFFF and t == 8 or 24.
+ * The guest gets the same, here, while it is swapped in as slot 0. */
+#define SCENE_PTR      (GAME_GP + 0x2ECu)  /* scene; +0x38C: mission scene number */
+#define HAZARD_FN      0x80076FA4u
+static void guest_hazards(ctx_t *ctx, u32 e) {
+    u32 scene = MEM_R32(SCENE_PTR), w = MEM_R32(WORLD_PTR);
+    if (!ram_ptr(scene) || !ram_ptr(w) || !(MEM_R32(e) & LIVE)) return;
+    if (MEM_R16S(scene + 0x38Cu) != 0x2A || MEM_R32(w + 4u) != 4u || (MEM_R32(scene) & 0x20000000u)) return;
+    s32 y = (s32)MEM_R32(e + 0xCu);
+    u32 t = MEM_R32(w + 0xCu) & 0x1Fu;
+    if ((y >= 0 && t == 0u) || (y > 0x01387FFF && t == 16u) || (y > 0x01F3FFFF && (t == 8u || t == 24u)))
+        call_guest(ctx, HAZARD_FN, 0, 0, 0, 0);
+}
+
+/* The missile manager ([gp+0x50C]) keeps, per target slot, who has missiles
+ * coming: word +0 bit n (slots 0..31), byte +8+n the latest missile at slot
+ * n, +0x48+n missiles fired by n, +0x88+n missiles homing on n (0x800685C0
+ * fills them in when a missile is launched at a handle). "The player" reads
+ * slot 0's: the targeting step (0x8003ADB4: missile close, bit 1 of
+ * 0x800C6ECC, the MISSILE warning) and the HUD (0x8003DCF0, 0x80067144). While
+ * the guest is the player (its update, its view replay) slots 0 and 1 are
+ * exchanged here too. */
+#define MISSILES_PTR   (GAME_GP + 0x50Cu)
+static void threat_swap(void) {
+    u32 t = MEM_R32(MISSILES_PTR);
+    if (!ram_ptr(t)) return;
+    u32 w = MEM_R32(t);
+    MEM_W32(t, (w & ~3u) | (w & 1u) << 1 | (w >> 1 & 1u));
+    static const u32 bytes[] = { 0x08u, 0x48u, 0x88u };
+    for (unsigned i = 0; i < 3; i++) {
+        u32 a = t + bytes[i], x = MEM_R8U(a), y = MEM_R8U(a + 1u);
+        MEM_W8(a, y); MEM_W8(a + 1u, x);
+    }
+}
+
 static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (coop_debug < 0) { const char *e = getenv("AC3_COOP_DEBUG"); coop_debug = e && *e && *e != '0'; }
     u32 slots = MEM_R32(SLOT_TABLE);
@@ -268,6 +324,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
      * world+0xB8). So the guest's update works on the guest's camera too. */
     guest_camera_swap(host, mine);
     guest_hud_swap();
+    threat_swap();
 
     ctx_t saved = *ctx;
     call_guest(ctx, INPUT_MAP_FN, CTRL_PORT2, 0x800BF3F0u, 0x800BF42Cu, 0);
@@ -279,6 +336,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (!getenv("AC3_COOP_NOUPDATE")) {     /* research switch: create the guest but never update it */
         call_guest(ctx, PLAYER_UPDATE, entry->r[4], entry->r[5], entry->r[6], entry->r[7]);
         guest_targeting(ctx);
+        guest_hazards(ctx, mine);
     }
     if (coop_debug && G.updates % 30u == 0) {
         u32 e = MEM_R32(slots);   /* still the guest's entity here */
@@ -294,6 +352,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     *ctx = saved;             /* the host's results (v0/v1) stand */
 
     /* swap the host back */
+    threat_swap();
     guest_hud_swap();
     guest_camera_swap(host, mine);
     MEM_W32(slots, host);
@@ -485,6 +544,7 @@ static void view_replay(ctx_t *ctx) {
     if (G.cam_valid)
         for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_in(w + view_private[i].off, G.cam[i], view_private[i].len);
     guest_hud_swap();         /* the guest's lock-on progress in (this RAM is thrown away after) */
+    threat_swap();            /* the guest's incoming missiles as "the player's" */
     /* The camera follows "the player" through pointers into the host's entity
      * (world+0xEC -> its position): point them at the guest's entity. */
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++)
@@ -566,7 +626,372 @@ void ac3_coop_field(void) {
     G.dead = 0;
 }
 
+/* Which aircraft the world keeps running. Each frame 0x80038100 clears the
+ * "active" bit (0x8000) of aircraft slots 2..31 and sets it again by type; for
+ * many (the bombers) only when their target record says "near the player"
+ * (bit 0x80 at +0x0C, set by 0x80045278 from the distance to the player, about
+ * 34,000 units). The player is the host, so enemies near only the guest stood
+ * still. While it runs, a target near either player counts as near: the other
+ * player's records are in G.hud_rec (the guest's in the game's own pass, the
+ * host's during the guest's replay), so their bit is added and taken off again
+ * afterwards. Both computers do the same, so they stay identical.
+ * 0x80051498 does the same for ground and ship objects (slots 0x20..0x3F, the
+ * table at gp+0x2D8): SAM and missile sites near only the guest stayed asleep
+ * and never fired at it (their update 0x80052FA8 skips inactive objects). */
+#define ACTIVATE_FN    0x80038100u
+#define ACTIVATE_GROUND_FN 0x80051498u   /* the same for ground and ship objects, slots 0x20..0x3F */
+static void activate_for_both(ctx_t *ctx, u32 fn) {
+    u32 added[64] = {0}, lo = fn == ACTIVATE_FN ? 2u : 0x20u, hi = fn == ACTIVATE_FN ? 32u : 64u;
+    for (u32 t = lo; t < hi; t++) {
+        u32 r = MEM_R32(HUD_RECS + 4u * t);
+        if (!ram_ptr(r)) continue;
+        const u8 *o = G.hud_rec[t] + 0x0Cu;
+        u32 other = (u32)o[0] | (u32)o[1] << 8 | (u32)o[2] << 16 | (u32)o[3] << 24;
+        u32 mine = MEM_R32(r + 0x0Cu);
+        if ((other & 0x80u) && !(mine & 0x80u)) { MEM_W32(r + 0x0Cu, mine | 0x80u); added[t] = 1; }
+    }
+    ac3_interpret(ctx, fn);
+    for (u32 t = lo; t < hi; t++)
+        if (added[t]) { u32 r = MEM_R32(HUD_RECS + 4u * t); MEM_W32(r + 0x0Cu, MEM_R32(r + 0x0Cu) & ~0x80u); }
+}
+
+/* Enemy AI and "the player". The aircraft AI runs once per frame for all
+ * aircraft: 0x800469EC (decisions) and 0x80046DFC (manoeuvres), both looping
+ * over slots 2..31 and skipping aircraft without both 0x4000 and 0x8000. Its
+ * code takes "the player" to be slot 0 in many places: target choice
+ * (0x80046124 takes slot 0 when the player has a free attacker place in the
+ * table at 0x800C6D80 + 4 * slot, +1 its target, +2/+3 its attackers; otherwise
+ * the nearest opponent from slot 2 up, never the guest), scripted "attack the
+ * player" (assigned target 0 at +0x1F of the AI record), manoeuvres that fly to
+ * slot 0 (0x8004F570 mode 7, 0x80050BB4, 0x80050DE8), and checks in the loops
+ * themselves (the same holds for 0x80046854 and the attack routines under
+ * 0x8004701C). So each frame the aircraft are split by "their" player (the one
+ * they attack, otherwise the nearer one) and each loop runs twice: once for the
+ * host's aircraft as usual, once for the guest's with the two players
+ * exchanged everywhere the AI looks (their slots, their table entries, every
+ * aircraft's 0/1 references). The aircraft of the other group are marked
+ * inactive (0x8000 cleared) for that run, so each aircraft is handled once. */
+#define AI_DECIDE_FN   0x800469ECu         /* runs third; the groups are decided here */
+#define AI_MOVE_FN     0x80046DFCu
+#define AI_PRE_FN      0x80046854u         /* runs before 0x800469EC: uses the previous frame's groups */
+#define AI_WEAPON_FN   0x8004701Cu         /* attacks (0x8004AD98 aims at slot 0) */
+#define AI_TABLE       0x800C6D80u         /* 4 bytes per slot: +1 its target, +2/+3 its attackers */
+#define AI_RECS        (GAME_GP + 0x34Cu)  /* 0xB8-byte AI record per slot: +0x60 target, +0x3F last target */
+#define AI_ACTIVE      0x8000u
+
+static s32 dist_to(u32 e, u32 o) {
+    s32 d = 0;
+    for (int c = 0; c < 3; c++) { s32 v = ((s32)MEM_R32(e + 8u + 4u * c) >> 12) - ((s32)MEM_R32(o + 8u + 4u * c) >> 12); d += v < 0 ? -v : v; }
+    return d;
+}
+static u32 flip01(u32 v) { return v == 0u ? 1u : v == 1u ? 0u : v; }
+
+/* An enemy keeps its target until the target is destroyed, and the ones that
+ * hunt the player get the host at mission start, before the guest exists. So
+ * an enemy attacking one player switches to the other when that one is much
+ * nearer (under 60% of the distance) and has a free attacker place, moving its
+ * place in the table as 0x800463B8/0x800464B0 do. */
+static u32 ai_switch_core(u32 slots, u32 slot, u32 t, u32 e) {
+    if (t > 1u) return t;
+    u32 o = t ^ 1u, te = MEM_R32(slots + 4u * t), oe = MEM_R32(slots + 4u * o);
+    if (!ram_ptr(te) || !ram_ptr(oe) || !(MEM_R32(oe) & LIVE)) return t;
+    s32 dt = dist_to(e, te), dn = dist_to(e, oe);
+    if ((s64)dn * 10 >= (s64)dt * 6) return t;
+    u32 to = AI_TABLE + 4u * o, tt = AI_TABLE + 4u * t;
+    u32 place;
+    if (MEM_R8U(to + 2u) == 0xFFu) place = to + 2u;
+    else if (MEM_R8U(to + 3u) == 0xFFu && MEM_R32(MEM_R32(GAME_GP + 0x2ECu) + 0x394u) != 0) place = to + 3u;
+    else return t;                                     /* the other player is busy enough */
+    if (MEM_R8U(tt + 2u) == slot) MEM_W8(tt + 2u, 0xFFu);
+    if (MEM_R8U(tt + 3u) == slot) MEM_W8(tt + 3u, 0xFFu);
+    MEM_W8(place, slot);
+    MEM_W8(AI_TABLE + 4u * slot + 1u, o);
+    return o;
+}
+static void ai_maybe_switch(u32 slots, u32 slot, u32 rec, u32 e) {
+    u32 t = MEM_R8U(rec + 0x60u), n = ai_switch_core(slots, slot, t, e);
+    if (n == t) return;
+    MEM_W8(rec + 0x60u, n);
+    MEM_W8(rec + 0x3Fu, n);
+}
+
+
+static void ai_exchange_players(u32 slots, u32 recs) {
+    u32 a = MEM_R32(slots), b = MEM_R32(slots + 4);
+    MEM_W32(slots, b); MEM_W32(slots + 4, a);
+    u32 ta = MEM_R32(AI_TABLE), tb = MEM_R32(AI_TABLE + 4);
+    MEM_W32(AI_TABLE, tb); MEM_W32(AI_TABLE + 4, ta);
+    for (u32 t = 0; t < 64u; t++) MEM_W8(AI_TABLE + 4u * t + 1u, flip01(MEM_R8U(AI_TABLE + 4u * t + 1u)));
+    for (u32 t = 2; t < 32u; t++) {
+        u32 rec = recs + 0xB8u * t;
+        MEM_W8(rec + 0x60u, flip01(MEM_R8U(rec + 0x60u)));
+        MEM_W8(rec + 0x3Fu, flip01(MEM_R8U(rec + 0x3Fu)));
+    }
+}
+/* run fn with the aircraft outside `group` marked inactive */
+static void ai_run_group(ctx_t *ctx, u32 fn, u32 slots, u32 group) {
+    u32 masked = 0;
+    for (u32 t = 2; t < 32u; t++) {
+        if (group & (1u << t)) continue;
+        u32 e = MEM_R32(slots + 4u * t);
+        if (ram_ptr(e) && (MEM_R32(e) & AI_ACTIVE)) { MEM_W32(e, MEM_R32(e) & ~AI_ACTIVE); masked |= 1u << t; }
+    }
+    ac3_interpret(ctx, fn);
+    for (u32 t = 2; t < 32u; t++)
+        if (masked & (1u << t)) { u32 e = MEM_R32(slots + 4u * t); MEM_W32(e, MEM_R32(e) | AI_ACTIVE); }
+}
+static int ai_two_groups(ctx_t *ctx, u32 fn) {
+    u32 slots = MEM_R32(SLOT_TABLE), recs = MEM_R32(AI_RECS);
+    u32 host = MEM_R32(slots), mine = MEM_R32(slots + 4);
+    if (!ram_ptr(recs) || !ram_ptr(host) || !ram_ptr(mine) || !(MEM_R32(mine) & LIVE)) return 0;
+    if (fn == AI_DECIDE_FN) {                       /* this frame's groups */
+        ai_guest_group = 0;
+        for (u32 t = 2; t < 32u; t++) {
+            u32 e = MEM_R32(slots + 4u * t);
+            if (!ram_ptr(e) || (~MEM_R32(e) & 0xC000u)) continue;
+            u32 rec = recs + 0xB8u * t;
+            ai_maybe_switch(slots, t, rec, e);
+            u32 tg = MEM_R8U(rec + 0x60u);
+            int guest = tg == 1u ? 1 : tg == 0u ? 0 : dist_to(e, mine) < dist_to(e, host);
+            if (guest) ai_guest_group |= 1u << t;
+        }
+    }
+    if (!ai_guest_group) return 0;                  /* all the host's: as in single player */
+    ctx_t entry = *ctx;
+    ai_run_group(ctx, fn, slots, ~ai_guest_group);
+    *ctx = entry;
+    ai_exchange_players(slots, recs);
+    players_exchanged = 1;
+    ai_run_group(ctx, fn, slots, ai_guest_group);
+    players_exchanged = 0;
+    ai_exchange_players(slots, recs);
+    return 1;
+}
+
+/* Mission rules about where "the player" is. 0x800540E0 (once per frame,
+ * from 0x800371C4) has, per mission scene (scene+0x38C), checks on slot 0's
+ * position that move the mission on or fail it (radio messages through
+ * 0x8004287C, mission scripts through 0x80054EBC, mission flags):
+ *     0x0E, 0x35  height (+0xC) > 0xFB1E0000 (lower than that); in 0x0E,
+ *                 while the mission flag 2 (gp+0x340) is set, the same check
+ *                 only tints the screen: left to each player's own view
+ *     0x06        height < 0xFF600000
+ *     0x2C        height < 0xFFA00000, or x and z inside a box
+ *     0x17        |x| and |z| <= 0x0946FFFF and height > 0xFC400000
+ *     0x37        z past 0x11D28000 (0x343F0000 when scene+0x394 is set)
+ * (0x2A's checks are damage: guest_hazards.) Both players must meet the
+ * condition (climb to the height, reach the area, ...): when the host meets it
+ * and the guest, still flying, does not, the rules run with the guest's
+ * position in the host's entity for the call, so they see it unmet; the host's
+ * position is put back afterwards unless the rules moved the host themselves.
+ * A guest that was shot down no longer holds the team back. Everything else
+ * the rules do stays the host's (story choices and route following are the
+ * host's). */
+#define MISSION_FN     0x800540E0u
+#define MISSION_STATE  (GAME_GP + 0x340u)
+static int mission_condition(s32 scene_no, u32 scene, u32 e) {
+    s32 x = (s32)MEM_R32(e + 8u), y = (s32)MEM_R32(e + 0xCu), z = (s32)MEM_R32(e + 0x10u);
+    u32 m = MEM_R32(MISSION_STATE);
+    switch (scene_no) {
+    case 0x0E: return y > (s32)0xFB1E0000 && !(ram_ptr(m) && (MEM_R32(m) & 2u));
+    case 0x35: return y > (s32)0xFB1E0000;
+    case 0x06: return y < (s32)0xFF600000;
+    case 0x2C: return y < (s32)0xFFA00000 ||
+                      ((u32)(x + 0x01F3FFFF) <= 0x07147FFEu && z > (s32)0xFB9B0000 && z <= 0x01387FFF);
+    case 0x17: return (x < 0 ? -x : x) <= 0x0946FFFF && (z < 0 ? -z : z) <= 0x0946FFFF && y > (s32)0xFC400000;
+    case 0x37: return MEM_R32(scene + 0x394u) ? z > 0x343F0000 : z > 0x11D28000;
+    default:   return 0;
+    }
+}
+static int mission_rules_for_both(ctx_t *ctx) {
+    u32 slots = MEM_R32(SLOT_TABLE), scene = MEM_R32(SCENE_PTR);
+    if (!ram_ptr(slots) || !ram_ptr(scene)) return 0;
+    u32 host = MEM_R32(slots), mine = MEM_R32(slots + 4);
+    if (!ram_ptr(host) || !ram_ptr(mine) || !(MEM_R32(mine) & LIVE)) return 0;
+    s32 no = (s32)MEM_R16S(scene + 0x38Cu);
+    if (!mission_condition(no, scene, host) || mission_condition(no, scene, mine)) return 0;
+    u32 hp[3], gp3[3];
+    for (u32 i = 0; i < 3u; i++) { hp[i] = MEM_R32(host + 8u + 4u * i); gp3[i] = MEM_R32(mine + 8u + 4u * i); }
+    for (u32 i = 0; i < 3u; i++) MEM_W32(host + 8u + 4u * i, gp3[i]);
+    ac3_interpret(ctx, MISSION_FN);
+    int moved = 0;
+    for (u32 i = 0; i < 3u; i++) moved |= MEM_R32(host + 8u + 4u * i) != gp3[i];
+    if (!moved) for (u32 i = 0; i < 3u; i++) MEM_W32(host + 8u + 4u * i, hp[i]);
+    if (coop_debug > 0) printf("coop: field %u mission scene 0x%02X rule met by the host but not the guest\n", ac3_vblank_count(), (u32)no);
+    return 1;
+}
+
+/* Effects around "the player" (0x800850D8, every frame after the player
+ * update): its vapour/wake (0x80082E80), the scene's weather around it at
+ * speed (0x80084F6C, reads the speed in the aircraft block), scene 0x2A's
+ * effect (0x80084E6C), and the flash 0x800831D0 called by 0x80090148. Each is
+ * also run for the other player: slot 0 and 1 exchanged, the other player's
+ * aircraft block in, the entity arguments pointed at the other entity. The
+ * guest's view replay does the same the other way round (the host's block is
+ * in the saved RAM then), so each view sees both planes' effects. */
+static const struct { u32 fn, ra; int needs_health; } fx_calls[] = {
+    { 0x80082E80u, 0x8008511Cu, 0 },
+    { 0x80084F6Cu, 0x80085154u, 1 },
+    { 0x80084E6Cu, 0x80085198u, 1 },
+    { 0x800831D0u, 0x80090200u, 0 },
+};
+#define N_FX_CALLS (sizeof fx_calls / sizeof fx_calls[0])
+static void other_block_swap(u8 *tmp, int first) {
+    u32 pp = pp_addr(PP_BLOCK), n = per_player[PP_BLOCK].len;
+    if (!G.replaying) { exchange(pp, G.mine[PP_BLOCK], n); return; }
+    if (first) memcpy(tmp, G.snap_ram + (pp & AC3_RAM_MASK), n);
+    exchange(pp, tmp, n);
+}
+static int fx_for_both(ctx_t *ctx, unsigned k) {
+    u32 slots = MEM_R32(SLOT_TABLE);
+    if (!ram_ptr(slots)) return 0;
+    u32 a = MEM_R32(slots), b = MEM_R32(slots + 4);
+    if (!ram_ptr(a) || !ram_ptr(b) || !ram_ptr(pp_addr(PP_BLOCK)) || (G.replaying && !G.snap_ram)) return 0;
+    ctx_t entry = *ctx;
+    ac3_interpret(ctx, fx_calls[k].fn);
+    ctx_t after = *ctx;
+    if ((MEM_R32(b) & LIVE) && (!fx_calls[k].needs_health || (s32)MEM_R16S(b + 0x4Eu) > 0)) {
+        static u32 n[N_FX_CALLS];
+        if (coop_debug > 0 && n[k]++ % 600u == 0)
+            printf("coop: field %u effect %08X for the other player (%u)%s\n", ac3_vblank_count(), fx_calls[k].fn, n[k],
+                   G.replaying ? " in the view replay" : "");
+        *ctx = entry;
+        for (int r = 4; r <= 7; r++)
+            if (ctx->r[r] >= a && ctx->r[r] < a + SLOT_SIZE) ctx->r[r] = b + (ctx->r[r] - a);
+        u8 tmp[0x100];
+        MEM_W32(slots, b); MEM_W32(slots + 4, a);
+        other_block_swap(tmp, 1);
+        ac3_interpret(ctx, fx_calls[k].fn);
+        other_block_swap(tmp, 0);
+        MEM_W32(slots, a); MEM_W32(slots + 4, b);
+    }
+    *ctx = after;
+    return 1;
+}
+
+/* Warnings for the right player.
+ * - Lock-on alert: an enemy weapon (0x800535D4, for weapon object a0 of the
+ *   table at gp+0x2D8; its target slot at +0x5B) sets bit 0 of 0x800C6ECC
+ *   half-way through its lock, whoever it aims at; the AI dispatcher
+ *   (0x8003809C) clears it each frame before 0x80046600. 0x800C6ECC is
+ *   per-player memory: the bit now goes to the player aimed at (in the main
+ *   pass the host's copy is in RAM and the guest's in G.mine; in the guest's
+ *   view replay the guest's is in RAM).
+ * - Warnings the mission rules raise themselves (0x8004287C called from
+ *   outside the warning picker 0x80042544, e.g. 0x800540E0): shown to both. */
+#define LOCK_ALERT_FN  0x800535D4u
+#define AI_FIRST_FN    0x80046600u
+#define SHOW_WARN_FN   0x8004287Cu
+#define WARN_PICK_FN   0x80042544u
+static void lock_alert(ctx_t *ctx) {
+    u32 list = MEM_R32(GAME_GP + 0x2D8u), alert = per_player[PP_ALERT].addr + 0xCu;
+    u32 obj = ram_ptr(list) ? MEM_R32(list + 4u * ctx->r[4]) : 0;
+    u32 tgt = ram_ptr(obj) ? MEM_R8U(obj + 0x5Bu) : 0xFFu, idx = ctx->r[4];
+    u32 before = MEM_R32(alert);
+    ac3_interpret(ctx, LOCK_ALERT_FN);
+    u32 after = MEM_R32(alert);
+    if (!(after & ~before & 1u)) return;
+    u32 me = G.replaying ? 1u : 0u;          /* whose copy is in RAM */
+    if (ground_vs_guest && tgt <= 1u) tgt ^= 1u;   /* players exchanged for the call (ground_for_guest) */
+    if (coop_debug > 0) printf("coop: field %u lock-on alert, weapon %u aims at slot %u%s\n", ac3_vblank_count(), idx, tgt,
+                               G.replaying ? " (view replay)" : "");
+    if (tgt == me) return;
+    MEM_W32(alert, after & ~1u);
+    if (!G.replaying && tgt == 1u) G.mine[PP_ALERT][0xC] |= 1u;
+}
+static void warn_both(ctx_t *ctx) {
+    ctx_t entry = *ctx;
+    ac3_interpret(ctx, SHOW_WARN_FN);
+    ctx_t after = *ctx;
+    *ctx = entry;
+    exchange(WARN_STATE, G.hud_static[HUD_WARN], 0x10u);
+    ac3_interpret(ctx, SHOW_WARN_FN);
+    exchange(WARN_STATE, G.hud_static[HUD_WARN], 0x10u);
+    *ctx = after;
+}
+
+/* Ground and ship weapons (0x80052FA8, one call per weapon i of the table at
+ * gp+0x2D8; its slot is 0x20 + i, its target slot at +0x5B, 0xFF = none).
+ * With no target, every 64 frames it asks 0x80046124, which only ever offers
+ * slot 0 ("the player", when it has a free attacker place) or a non-player
+ * opponent: the guest was never chosen. It keeps the target until it is out
+ * of range (0x800464B0). So a weapon with no target and the guest nearer, or
+ * aiming at the guest, runs as if the guest were the player (ground_for_guest),
+ * and a weapon aiming at one player switches to the other when that one is
+ * much nearer (ai_switch_core). The target keeps its real slot number. */
+#define GROUND_FN      0x80052FA8u
+static u32 ground_entity(u32 i) {
+    u32 list = MEM_R32(GAME_GP + 0x2D8u);
+    return ram_ptr(list) && i < 0x20u ? MEM_R32(list + 4u * i) : 0;
+}
+static void ground_maybe_switch(u32 i) {
+    u32 slots = MEM_R32(SLOT_TABLE), e = ground_entity(i);
+    if (!ram_ptr(slots) || !ram_ptr(e)) return;
+    u32 t = MEM_R8U(e + 0x5Bu);
+
+    if (t <= 1u) MEM_W8(e + 0x5Bu, ai_switch_core(slots, 0x20u + i, t, e));
+}
+/* As the guest's: the two players exchanged (slots, attacker table), its
+ * target 0 instead of 1, and the guest's copy of its target record in place.
+ * For "the player" the weapon checks its range against the distance in that
+ * record (0x800C6ED0 + 4 * slot points at record+0xC, the distance at +4); for
+ * any other target it adds up |dx|+|dy|+|dz|, up to 1.7 times larger, so a SAM
+ * with range 6,000 dropped the guest again at once and never fired. */
+static int ground_for_guest(ctx_t *ctx) {
+    u32 i = ctx->r[4], slot = 0x20u + i, slots = MEM_R32(SLOT_TABLE), recs = MEM_R32(AI_RECS), e = ground_entity(i);
+    if (!ram_ptr(slots) || !ram_ptr(recs) || !ram_ptr(e) || !G.hud_valid) return 0;
+    u32 t = MEM_R8U(e + 0x5Bu), host = MEM_R32(slots), mine = MEM_R32(slots + 4);
+    if (!ram_ptr(host) || !ram_ptr(mine) || !(MEM_R32(mine) & LIVE)) return 0;
+    if (!(t == 1u || (t == 0xFFu && dist_to(e, mine) < dist_to(e, host)))) return 0;   /* the host's: as usual */
+    u32 rec = MEM_R32(HUD_RECS + 4u * slot);
+    ai_exchange_players(slots, recs);
+    if (t == 1u) MEM_W8(e + 0x5Bu, 0u);
+    if (ram_ptr(rec)) exchange(rec, G.hud_rec[slot], HUD_REC_LEN);
+    ground_vs_guest = players_exchanged = 1;
+    ac3_interpret(ctx, GROUND_FN);
+    ground_vs_guest = players_exchanged = 0;
+    if (ram_ptr(rec)) exchange(rec, G.hud_rec[slot], HUD_REC_LEN);
+    MEM_W8(e + 0x5Bu, flip01(MEM_R8U(e + 0x5Bu)));
+    ai_exchange_players(slots, recs);
+    return 1;
+}
+
+/* Missile launch (0x800685C0, a3 = the target's handle). It looks the target
+ * up in the slot table by the handle's slot and keeps pointers to its position
+ * and velocity (+0x74, +0x78), which the missile then homes on. A handle is the
+ * real one (the guest's is slot 1), so while an enemy's turn runs with the
+ * players exchanged the lookup found the host's entity: the missile was counted
+ * as the guest's (warnings) but flew at the host's position. The slot table is
+ * put straight for the launch. */
+#define MISSILE_LAUNCH_FN 0x800685C0u
+static void launch_real_slots(ctx_t *ctx) {
+    u32 slots = MEM_R32(SLOT_TABLE), a = MEM_R32(slots), b = MEM_R32(slots + 4);
+    MEM_W32(slots, b); MEM_W32(slots + 4, a);
+    ac3_interpret(ctx, MISSILE_LAUNCH_FN);
+    MEM_W32(slots, a); MEM_W32(slots + 4, b);
+}
+
 int ac3_coop_intercept(ctx_t *ctx, u32 target) {
+    if (players_exchanged && target == MISSILE_LAUNCH_FN) { launch_real_slots(ctx); return 1; }
+    if (G.live && !G.replaying && target == GROUND_FN) {
+        ground_maybe_switch(ctx->r[4]);
+        if (ground_for_guest(ctx)) return 1;      /* otherwise runs as usual */
+    }
+    if (G.live && target == LOCK_ALERT_FN) { lock_alert(ctx); return 1; }
+    if (G.live && !G.replaying && target == AI_FIRST_FN) G.mine[PP_ALERT][0xC] &= (u8)~1u;   /* then runs as usual */
+    if (G.live && !G.replaying && G.hud_valid && target == SHOW_WARN_FN &&
+        !(ac3_guest_ra >= WARN_PICK_FN && ac3_guest_ra < SHOW_WARN_FN)) { warn_both(ctx); return 1; }
+    if (G.live && !G.replaying && target == MISSION_FN && mission_rules_for_both(ctx)) return 1;
+    if (G.live)
+        for (unsigned k = 0; k < N_FX_CALLS; k++)
+            if (target == fx_calls[k].fn && ac3_guest_ra == fx_calls[k].ra) return fx_for_both(ctx, k);
+    if ((target == ACTIVATE_FN || target == ACTIVATE_GROUND_FN) && G.live && G.hud_valid) {
+        activate_for_both(ctx, target);
+        return 1;
+    }
+    if (G.live && !G.replaying && (target == AI_DECIDE_FN || target == AI_MOVE_FN || target == AI_PRE_FN ||
+                                   target == AI_WEAPON_FN) && ai_two_groups(ctx, target))
+        return 1;
     if (!G.replaying && target == DRAW_LAST_FN && ac3_guest_ra == DRAW_LAST_RA && G.view_on) {
         ac3_interpret(ctx, target);
         view_replay(ctx);

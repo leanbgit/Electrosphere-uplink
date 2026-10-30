@@ -161,12 +161,224 @@ HUD state (with the per-target HUD arrays at 0x800C68E0..0x800C6D60). Checked:
 the circle sits in front of the guest and travels to the bomber as in single
 player; host's and guest's computers byte-identical (10,020 fields).
 
-## Found, not fixed yet: far objects freeze unless the host is near
+## Far objects froze unless the host was near (found and fixed 2026-10-29)
 
 Same recording. The bombers (slots 5–8) have speed exactly 0 whenever they are
 more than about 50,000 units from the host, in a solo replay and in co-op alike,
 even with the guest flying 3,600–14,000 units from them (field 7,200–9,000:
 bomber 6 still, guest beside it, host 140,000–200,000 away). The game only runs
-distant objects near "the player", and that is the host. To do: find the
-activation check and use the nearer of the two players.
+distant objects near "the player", and that is the host.
 
+**Fixed the same day.** The check is `0x80038100` (called from `0x80038A3C` in the
+tick): each frame it clears the "active" bit 0x8000 of aircraft slots 2..31 and
+sets it again by type. Fighters (0x10 in the per-object table 0x800C6FD0) are
+always active; others (the bombers) only when their target record has bit 0x80
+at +0x0C, "near the player", which `0x80045278` sets from the distance to the
+player (under 0x84CF, about 34,000 in record units). The movement code
+(`0x800383AC`) skips aircraft without the active bit, so they stand still.
+`coop.c` now intercepts `0x80038100` and, while it runs, also marks as near
+every target that is near the other player (their records are in the guest's
+copy, `G.hud_rec`; during the guest's replay that copy holds the host's), then
+takes the extra bits off again. Checked: the bombers keep flying while the guest
+is within ~45,000 units of them, however far the host is; they stop only when
+both players are far; host's and guest's computers byte-identical (10,020
+fields).
+
+
+## Teammate audit (2026-10-29): what still treated only the host as "the player"
+
+A sweep for code that reads slot 0 as "the player" found four things, all
+fixed below (the warnings last, after a browser test confirmed them).
+
+### Enemies never targeted the guest (fixed)
+
+The aircraft AI runs once per frame over slots 2..31: `0x80046854`,
+`0x800469EC` (decisions), `0x80046DFC` (manoeuvres), `0x8004701C` (attacks).
+It takes "the player" to be slot 0 in many places: the target choice
+`0x80046124` takes slot 0 when the player has a free attacker place in the
+table at `0x800C6D80` (4 bytes per slot: +1 its target, +2/+3 its attackers),
+otherwise the nearest opponent from slot 2 up, never slot 1; scripted "attack
+the player" orders; manoeuvres that fly to slot 0; aiming (`0x8004AD98`).
+Targets are also sticky: the hunters get the host at mission start, before the
+guest exists.
+
+`coop.c` now splits the aircraft each frame by "their" player (the one they
+attack, otherwise the nearer one) and runs each of the four loops twice: once
+for the host's group as usual, once for the guest's group with the two players
+exchanged everywhere the AI looks (slot table entries 0/1, the attacker-table
+words 0/1, every aircraft's 0/1 target bytes in the table and in its AI record
+at `[gp+0x34C] + 0xB8 * slot`, +0x60 target and +0x3F last target). Aircraft of
+the other group are marked inactive (0x8000 cleared) for that run. An enemy
+attacking one player switches to the other when that one is under 60% of the
+distance and has a free attacker place. Checked: enemies with the guest as
+target, NF recording 18 (host 9), X recording 54 (host 6); host's and guest's
+computers byte-identical (X 10,100 fields, NF 12,000).
+
+### Mission rules checked only the host's position (fixed: both players must meet them)
+
+`0x800540E0` (once per frame from `0x800371C4`) has, per mission scene
+(scene+0x38C), checks on slot 0's position that move the mission on or fail it
+(radio messages via `0x8004287C`, mission scripts via `0x80054EBC`, mission
+flags at gp+0x340):
+
+| Scene | Condition on "the player" |
+|---|---|
+| 0x0E, 0x35 | height (+0xC) > 0xFB1E0000 (below that altitude); in 0x0E, while mission flag 2 is set, the same check only tints the screen |
+| 0x06 | height < 0xFF600000 |
+| 0x2C | height < 0xFFA00000, or x and z inside a box |
+| 0x17 | \|x\|, \|z\| <= 0x0946FFFF and height > 0xFC400000 |
+| 0x37 | z past 0x11D28000 (0x343F0000 when scene+0x394 is set) |
+| 0x2A | low altitude costs health (`0x80076FA4`, every 32/16/8 frames by depth) |
+
+Now both players must meet the condition (climb to the height, reach the
+area, ...): when the host meets the scene's condition and the guest, still
+flying, does not, the rules run with the guest's position written into the
+host's entity for that call, so they see the condition unmet; the host's
+position is put back afterwards (unless the rules moved the host themselves).
+A guest that was shot down no longer counts. This applies to failure checks as
+well (for example "below this altitude" in 0x0E/0x35 needs both players low).
+Everything else the rules do stays the host's. The tint phase of 0x0E
+is left to each player's own view. Scene 0x2A's damage is per player: the same
+check runs for the guest during its own update (with its own state swapped in)
+and takes the point off the guest. Not covered by the recordings so far
+(scenes 1 and 21): to test in those missions.
+
+### Effects around the player only existed for the host (fixed)
+
+`0x800850D8` (every frame after the player update) makes the effects around
+"the player": spray/wake when low (`0x80082E80`), the scene's weather around it
+at speed (`0x80084F6C`, reads the speed in the aircraft block), scene 0x2A's
+effect (`0x80084E6C`) and a flash (`0x800831D0`, from `0x80090148`). Each call
+from there is now run a second time for the other player: slots 0 and 1
+exchanged, the other player's aircraft block swapped in, the entity arguments
+pointed at the other entity. In the guest's view replay the other player is
+the host (its block comes from the saved RAM), so each picture shows both
+planes' effects. The two recordings do not reach these effects (no changes to
+the simulation in them); host's and guest's computers byte-identical.
+
+### Warnings followed the host on both screens (fixed)
+
+Browser test: the host's warnings (off course, missile, the blue autopilot
+text) showed on the guest's screen too, and the guest never got its own lock-on
+or PULL UP warning. The warning banner is picked each frame by `0x80042544`,
+called from the HUD preparation `0x8003A0B4` (the drawing part of the frame, so
+it already runs in the guest's view replay with the guest's data): in order,
+missile close / locked on (bits 1 and 0 of `0x800C6ECC`), off course
+(`0x800476F0` on slot 0), altitude ceiling, PULL UP (30 frames too low, counted
+at gp+0x44C), and states read from the input map (scene+0x128/0x12C, per
+player), such as the autopilot. `0x8004287C` keeps the chosen warning at
+`0x800C7180` (number, time left, two animation records) until it runs out,
+replaced only by a more urgent one. That record was shared, so the host's
+warning, decided in the main pass, stayed up in the guest's replay, and the
+guest's own was thrown away with the replay's memory.
+
+- `0x800C7180` (0x10 bytes) and gp+0x44C are now per-player HUD state
+  (`hud_static`, kept across frames like the lock-on progress).
+- Warnings the mission rules raise themselves (`0x8004287C` called from outside
+  `0x80042544`) are given to both players.
+- The lock-on alert: an enemy weapon (`0x800535D4`, its target slot at +0x5B)
+  sets bit 0 of `0x800C6ECC` half-way through its lock whoever it aims at, and
+  the AI dispatcher `0x8003809C` clears it each frame. That word is per-player
+  memory; the bit now goes to the player aimed at. Bit 1 (missile close) is
+  computed by the targeting step, which already runs for each player.
+
+Checked: in the NF recording the host's WARNING and red missile HUD (fields
+10,600-10,640) no longer show on the guest; with a scripted guest diving into
+the ground (`gdive.ac3i`, port 2 stick forward for fields 7,000-7,100) the
+guest gets CAUTION and BODY DAMAGE on its own screen only. Host's and guest's
+computers byte-identical (X, NF and the dive). Not reproduced on the bench: the
+autopilot text and off course (same mechanism), and a lock-on aimed at the guest.
+
+### The guest never got MSSL ALERT (fixed 2026-10-30)
+
+Next browser test: autopilot text and the other warnings were right, but the
+guest never got the missile alert. The missile manager (`[gp+0x50C]`) records
+incoming missiles per target slot: word +0 bit n for slot n, byte +8+n the
+latest missile at slot n, +0x48+n missiles fired by n, +0x88+n missiles homing
+on n (filled in by `0x800685C0` when a missile is launched at a handle).
+Everything that warns "the player" reads slot 0's: the targeting step
+(`0x8003ADB4`, sets bit 1 of `0x800C6ECC` when the missile is close, i.e. MSSL
+ALERT and the red HUD) and the HUD (`0x8003DCF0`, `0x80067144`). Missiles fired
+at the guest were recorded under slot 1 and never looked at. `coop.c` now
+exchanges the slot 0 and slot 1 entries while the guest is "the player" (its
+update and its view replay). Checked on the X recording, where enemies fire 6
+missiles at the guest: the guest gets MSSL ALERT and the red HUD (fields
+3,243-3,355 and the other launches), the host does not; in NF the host's
+WARNING and red HUD stay on the host's screen only. Host's and guest's
+computers byte-identical (X, NF).
+
+The "WARNING" lock-on banner comes from ships' and ground weapons (`0x800535D4`,
+see above); enemy aircraft do not raise it in single player either. A lock by
+such a weapon on the guest has not been reproduced on the bench.
+
+### Ground and ship weapons never fired at the guest (fixed 2026-10-30)
+
+User report and recording (Megafloat, `coop_20261030043137.ac3i`): the guest
+flies over the SAM and missile sites, which never fire at it; the host gets
+fired upon there. Three things were in the way:
+
+1. **The sites were asleep.** Each frame `0x80051498` clears the active bit
+   (0x8000) of the ground and ship objects (slots 0x20..0x3F, table at
+   gp+0x2D8) and sets it again when their target record says "near the player"
+   (bit 0x80 at record+0xC), like `0x80038100` does for aircraft. The update
+   (`0x80051414` -> `0x80051A54` -> `0x80052FA8`) skips inactive objects, so
+   with the host far away the sites near the guest only ran in the guest's
+   view replay (whose memory is thrown away). The activation intercept now
+   covers `0x80051498` too: a site near either player is active.
+2. **Target choice.** With no target (+0x5B = 0xFF) a weapon asks
+   `0x80046124`, which only offers slot 0 ("the player", if it has a free
+   attacker place) or a non-player opponent.
+3. **Range check.** For "the player" the weapon compares its range with the
+   distance in its target record (`0x800C6ED0` + 4 * slot points at
+   record+0xC, distance at +4); for any other target it adds up
+   |dx|+|dy|+|dz|, up to 1.7 times larger. A SAM with range 6,000 dropped the
+   guest again in the same frame it picked it.
+
+For 2 and 3, a weapon with no target and the guest nearer than the host, or
+already aiming at the guest, now runs as if the guest were the player: the two
+players exchanged (slot table, attacker table), its target 0 instead of 1, the
+guest's copy of its target record in place; afterwards its target is turned
+back into the real slot (1). The lock-on alert from such a weapon goes to the
+guest. A weapon aiming at one player switches to the other when that one is
+under 60% of the distance and has a free attacker place (`ai_switch_core`, as
+for aircraft). The attacker-place limit (one or two attackers per player) still
+applies to each player, as in single player.
+
+Checked with the user's recording: sites 0x20 and 0x26 pick the guest (fields
+4,452 and 4,482), site 0x26 locks on (lock-on alert to the guest at 4,496) and
+fires at 4,512, site 0x25 at 5,480; the guest gets MSSL ALERT, the red HUD and
+damage, the host's screen stays clean. Host's and guest's computers
+byte-identical (this recording, X).
+
+### Missiles fired at the guest flew at the host (fixed 2026-10-30)
+
+Next browser test: the SAMs fire and the guest gets the warning, but the
+missile tracks a point well away from the guest. The launch (`0x800685C0`,
+a3 = target handle) looks the target up in the slot table by the handle's slot
+and keeps pointers to its position and velocity (missile record +0x74/+0x78),
+which the missile homes on. Handles are real (the guest's is slot 1), but the
+weapon's turn runs with slots 0 and 1 exchanged, so the lookup found the
+host's entity: the missile counted as the guest's (warnings) and flew at the
+host's position. `coop.c` now puts the slot table straight for any launch made
+while the players are exchanged (ground weapons and the guest's group of the
+aircraft AI). Checked on the Megafloat recording: the missile launched at the
+guest at field 4,512 points at the guest's position (before: the host's).
+Host's and guest's computers byte-identical (Megafloat, X).
+
+### Audit: other enemy code that runs with the players exchanged (2026-10-30)
+
+After the missile fix, a debug build compared RAM before and after every
+stretch of code that runs with slots 0 and 1 exchanged (the guest's group of
+each aircraft AI loop, ground and ship weapons aiming at the guest, the guest's
+own update) and reported any new pointer into either player's entity left
+behind, i.e. any other place that, like the missile launch, would keep the
+wrong player. Megafloat (user recording), X (bombers, fighters firing at the
+guest) and nfcopy (ships firing at both planes): nothing in the AI or weapon
+runs; in the guest's update only its own missiles' launcher pointers, which
+are correct. Also checked: the SAM missile fired at the guest at field 4,512
+closes on the guest steadily (10,700 to under 600 units in 160 fields); the
+guest takes gun/flak damage from the sites (health 30 -> 22).
+
+Not exchanged, so unaffected: the camera-distance pass `0x8004833C`, the
+radio/voice pass `0x80049438`, and the destroyed-enemy pass `0x80046600`
+(kill credit by +0x50, last attacker).
