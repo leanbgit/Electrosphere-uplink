@@ -152,6 +152,8 @@ void coop_view_mark(ctx_t *ctx, u32 resume_pc) {
     if (!G.snap_ram) return;
     memcpy(G.snap_ram, ac3_ram, AC3_RAM_SIZE);
     memcpy(G.snap_scratch, ac3_scratch, sizeof G.snap_scratch);
+    copy_out(pp_addr(PP_BLOCK), G.host_block, BLOCK_SIZE);
+    memcpy(G.flash_snap, G.flash, sizeof G.flash);   /* the guest's flash before this frame's effects */
     G.snap_ctx = *ctx;
     G.snap_pc = resume_pc;
     G.view_on = 1;
@@ -161,23 +163,26 @@ void coop_view_mark(ctx_t *ctx, u32 resume_pc) {
  * host's. Replay the rest of the frame for the guest from the saved state
  * (the tick after the player update, camera, drawing), keep what the guest's
  * HUD decided (lock-on, both computers) and the picture it drew (guest's
- * computer only), then put the host's memory back. */
+ * computer only), then go back to the host's memory.
+ * The replay runs in the snapshot itself: the game's RAM pointer (ac3_ram) is
+ * pointed at it for the replay and back at the host's RAM afterwards, so the
+ * host's memory is neither copied away nor copied back (the snapshot is taken
+ * afresh next frame). */
 static void view_replay(ctx_t *ctx) {
     if (!G.view_on) return;
     G.view_on = 0;
     u32 lo = 0, hi = 0;
     if (!draw_buffer(&lo, &hi)) return;
-    static u8 *host_ram;
     static u8 host_scratch[1024];
-    if (!host_ram) host_ram = (u8 *)malloc(AC3_RAM_SIZE);
     if (!G.keep_buf) G.keep_buf = (u8 *)malloc(PICTURE_MAX);
-    if (!host_ram || !G.keep_buf) return;
-    memcpy(host_ram, ac3_ram, AC3_RAM_SIZE);
+    if (!G.keep_buf) return;
+    u64 t0 = coop_now_ns();
+    u8 *host_ram = ac3_ram;
     memcpy(host_scratch, ac3_scratch, sizeof host_scratch);
     ctx_t host_ctx = *ctx;
 
     /* back to just after the player update, with the guest swapped in */
-    memcpy(ac3_ram, G.snap_ram, AC3_RAM_SIZE);
+    ac3_ram = G.snap_ram;
     memcpy(ac3_scratch, G.snap_scratch, sizeof G.snap_scratch);
     *ctx = G.snap_ctx;
     u32 slots = MEM_R32(SLOT_TABLE), w = MEM_R32(WORLD_PTR);
@@ -189,6 +194,7 @@ static void view_replay(ctx_t *ctx) {
         for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_in(w + coop_view_private[i].addr, G.cam[i], coop_view_private[i].len);
     coop_hud_swap();          /* the guest's lock-on progress in (this RAM is thrown away after) */
     coop_threat_swap();       /* the guest's incoming missiles as "the player's" */
+    if (G.shake_valid) copy_in(w + WORLD_SHAKE, G.shake, 8);   /* the guest's screen shake */
     /* The camera follows "the player" through pointers into the host's entity
      * (camera object +0x34 -> its position): point them at the guest's entity. */
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++)
@@ -196,15 +202,21 @@ static void view_replay(ctx_t *ctx) {
             u32 a = w + coop_view_private[i].addr + o, v = MEM_R32(a);
             if (v >= host && v < host + ENT_SIZE) MEM_W32(a, mine + (v - host));
         }
+    coop_prof_add(PROF_REPLAY_COPY, t0);
 
     /* the rest of the tick (it returns to the interpreter's sentinel, because
      * the flight frame calls it through a pointer), then the flight frame
      * from just after that call to the end of drawing */
     G.replaying = 1;
+    u64 t1 = coop_now_ns();
     ac3_interpret_until(ctx, G.snap_pc, 0);
+    coop_prof_add(PROF_REPLAY_TICK, t1);
+    u64 t2 = coop_now_ns();
     ctx->r[31] = RA_AFTER_TICK;
     ac3_interpret_until(ctx, RA_AFTER_TICK, RA_DRAW_LAST);
+    coop_prof_add(PROF_REPLAY_DRAW, t2);
     G.replaying = 0;
+    u64 t3 = coop_now_ns();
 
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_out(w + coop_view_private[i].addr, G.cam[i], coop_view_private[i].len);
     G.cam_valid = 1;
@@ -214,32 +226,41 @@ static void view_replay(ctx_t *ctx) {
      * frame's player update and targeting read it. So the replay runs on both
      * computers and these bytes become part of the guest's state. */
     for (u32 o = 0x08u; o <= 0x12u; o++) G.mine[PP_TARGETING][o] = (u8)MEM_R8U(TARGETING_STATE + o);
-    if (!ac3_coop_view) {                       /* host's computer: no picture to keep */
-        memcpy(ac3_ram, host_ram, AC3_RAM_SIZE);
-        memcpy(ac3_scratch, host_scratch, sizeof host_scratch);
-        *ctx = host_ctx;
-        G.views++;
-        return;
-    }
-    u32 glo = 0, ghi = 0;
-    int same = draw_buffer(&glo, &ghi) && glo == lo && ghi == hi;
-    if (same) {
-        memcpy(G.keep_buf, ac3_ram + (lo & AC3_RAM_MASK), hi - lo);
-        u32 w2 = MEM_R32(WORLD_PTR), ot0 = MEM_R32(w2 + WORLD_OT0), pk0 = MEM_R32(w2 + WORLD_PACKETS0);
-        collect_packets(lo, hi, lo, (pk0 - ot0) / 4u);   /* both buffers have the same OT size */
+    int same = 0;
+    if (ac3_coop_view) {                        /* guest's computer: keep the picture */
+        u32 glo = 0, ghi = 0;
+        same = draw_buffer(&glo, &ghi) && glo == lo && ghi == hi;
+        if (same) {
+            memcpy(G.keep_buf, ac3_ram + (lo & AC3_RAM_MASK), hi - lo);
+            u32 w2 = MEM_R32(WORLD_PTR), ot0 = MEM_R32(w2 + WORLD_OT0), pk0 = MEM_R32(w2 + WORLD_PACKETS0);
+            collect_packets(lo, hi, lo, (pk0 - ot0) / 4u);   /* both buffers have the same OT size */
+        }
     }
 
-    /* the host's memory and registers again, with the guest's picture */
-    memcpy(ac3_ram, host_ram, AC3_RAM_SIZE);
+    /* the host's memory and registers again */
+    ac3_ram = host_ram;
     memcpy(ac3_scratch, host_scratch, sizeof host_scratch);
     *ctx = host_ctx;
+    coop_prof_add(PROF_REPLAY_COPY, t3);
+    G.views++;
+    coop_message_log();
+    if (!ac3_coop_view) return;
     if (!ov_backup) ov_backup = (u8 *)malloc(PICTURE_MAX);
     OV.ready = same && ov_backup;
     OV.lo = lo; OV.hi = hi;
-    if (coop_debug > 0 && G.views < 3)
+    if (coop_debug > 0 && G.views < 4)
         printf("coop: guest view drawn at field %u (buffer %08X..%08X%s, %u packets outside it)\n",
                ac3_vblank_count(), lo, hi, same ? "" : ", NOT kept", n_extra);
-    G.views++;
+}
+
+/* The host's computer replays the guest's frame only for what the guest's
+ * HUD decides; nobody sees that picture. Its 3D drawing (about 40% of the
+ * replay) is skipped there: none of it is kept, and the HUD's decisions
+ * come out the same (checked by comparing both computers' memory). */
+int coop_view_skip_3d(u32 target) {
+    if (!G.replaying || ac3_coop_view) return 0;
+    return (target == FN_DRAW_TERRAIN && ac3_guest_ra == RA_DRAW_TERRAIN) ||
+           (target == FN_DRAW_WORLD && ac3_guest_ra == RA_DRAW_WORLD);
 }
 
 /* The flight frame's last drawing call: run it, then the guest's replay. */

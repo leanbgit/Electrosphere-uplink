@@ -42,10 +42,18 @@ const coop_range_t coop_hud_static[N_HUD_STATIC] = {
     { LOW_FRAMES,  0x01u },    /* frames too low, PULL UP after 30 */
 };
 
+static u32 msg_state(void) {
+    u32 m = MEM_R32(MESSAGE_PTR);
+    return ram_ptr(m) ? m + MSG_STATE : 0u;
+}
+
 /* Exchange the HUD state with the other player's copy (which starts as a copy
- * of the host's, the first time in a mission). */
+ * of the host's, the first time in a mission). The message on screen
+ * (MESSAGE_PTR, see below) is part of it. */
 void coop_hud_swap(void) {
+    u32 ms = msg_state();
     if (!G.hud_valid) {
+        if (ms) copy_out(ms, G.msg, MSG_STATE_LEN);
         copy_out(HUD_LOCK, G.hud_lock, HUD_LOCK_LEN);
         for (unsigned i = 0; i < N_HUD_STATIC; i++) copy_out(coop_hud_static[i].addr, G.hud_static[i], coop_hud_static[i].len);
         for (u32 t = 0; t < N_SLOTS; t++) {
@@ -55,6 +63,7 @@ void coop_hud_swap(void) {
         G.hud_valid = 1;
     }
     exchange(HUD_LOCK, G.hud_lock, HUD_LOCK_LEN);
+    if (ms) exchange(ms, G.msg, MSG_STATE_LEN);
     for (unsigned i = 0; i < N_HUD_STATIC; i++) exchange(coop_hud_static[i].addr, G.hud_static[i], coop_hud_static[i].len);
     for (u32 t = 0; t < N_SLOTS; t++) {
         u32 r = MEM_R32(HUD_RECS + 4u * t);
@@ -97,6 +106,98 @@ static int warn_both(ctx_t *ctx) {
     exchange(WARN_STATE, G.hud_static[HUD_WARN], coop_hud_static[HUD_WARN].len);
     ac3_interpret(ctx, FN_SHOW_WARNING);
     exchange(WARN_STATE, G.hud_static[HUD_WARN], coop_hud_static[HUD_WARN].len);
+    *ctx = after;
+    return 1;
+}
+
+/* ---- messages: BINGO, BULLS EYE, MISSION ACCOMPLISHED, ... --------------------
+ * FN_SHOW_MESSAGE puts the big text in the middle of the screen; its state
+ * (MESSAGE_PTR) is ticked and drawn in the flight frame's drawing, so each
+ * player keeps a copy (coop_hud_swap): the guest's is in during its update and
+ * its view replay. Who sees a message:
+ *   - the mission's (ENGAGE, MISSION ACCOMPLISHED, ...): both. Raised once
+ *     more on the guest's copy, without the sound the first one played; the
+ *     replay, which goes through the same code again, leaves them alone.
+ *   - HOLD YOUR FIRE comes from each player's own HUD code: as it runs.
+ *   - a kill (BINGO, BULLS EYE): the one who shot it down. The game shows it
+ *     when an aircraft (FN_AI_FIRST) or ground object (FN_GROUND_DOWN) goes
+ *     down and the last hit came from slot 0 (ENT_ATTACKER); the host's kills
+ *     stay the host's. The guest's (last hit from slot 1) are found with the
+ *     same checks, in the guest's view replay, and shown on the guest's copy
+ *     after the game's own pass. */
+static int is_hud_message(u32 ra)  { return ra == RA_HOLD_FIRE_1 || ra == RA_HOLD_FIRE_2; }
+static int is_kill_message(u32 ra) { return ra == RA_KILL_AIRCRAFT || ra == RA_KILL_GROUND; }
+
+static int show_message(ctx_t *ctx) {
+    u32 ms = msg_state();
+    if (!G.live || !G.hud_valid || !ms || is_hud_message(ac3_guest_ra)) return 0;
+    if (G.replaying) return 1;                   /* shown to the guest already, or the host's kill */
+    if (G.in_guest_update || is_kill_message(ac3_guest_ra)) return 0;   /* one player's own */
+    ctx_t entry = *ctx;
+    ac3_interpret(ctx, FN_SHOW_MESSAGE);
+    ctx_t after = *ctx;
+    *ctx = entry;
+    exchange(ms, G.msg, MSG_STATE_LEN);
+    G.quiet = 1;
+    ac3_interpret(ctx, FN_SHOW_MESSAGE);
+    G.quiet = 0;
+    exchange(ms, G.msg, MSG_STATE_LEN);
+    *ctx = after;
+    return 1;
+}
+
+/* The kill message for e, if the guest shot it down (the game's own checks,
+ * with slot 1 for slot 0); -1 if none. f: its SLOT_FLAGS word. */
+static int guest_kill_message(u32 e, u32 f, int ground) {
+    if (!ram_ptr(e) || !(f & SF_DOWN) || ent_health(e) > 0) return -1;
+    if ((!ground && (f & SF_SCRIPTED)) || !(f & SF_KILL_MESSAGE)) return -1;
+    if ((MEM_R32(e + ENT_ATTACKER) & 0x3Fu) != 1u) return -1;
+    u32 w = MEM_R32(e + ENT_WORD), scene = MEM_R32(SCENE_PTR), world = MEM_R32(WORLD_PTR);
+    if (w & ENT_NO_MESSAGE) return -1;
+    s32 kind = MEM_R16S(e + ENT_KIND);
+    if (ground) {
+        if (ram_ptr(scene) && MEM_R16S(scene + SCENE_MISSION) == 0x16 && kind == 0x46) return MSG_TARGETED;
+        return (w & ENT_MESSAGE) ? (int)MSG_BULLS_EYE : -1;
+    }
+    if (kind == 0x2C || !(w & ENT_MESSAGE) || !ram_ptr(world)) return -1;
+    return (MEM_R32(world + WORLD_FRAME) & 7u) ? (int)MSG_BULLS_EYE : (int)MSG_BINGO;
+}
+
+/* (AC3_COOP_DEBUG) log each player's message as it changes */
+void coop_message_log(void) {
+    static u32 last[2] = { 0xFFu, 0xFFu };
+    u32 ms = msg_state();
+    if (coop_debug <= 0 || !ms || !G.hud_valid) return;
+    u32 now[2] = { MEM_R32(ms + MSG_NUMBER - MSG_STATE), (u32)G.msg[MSG_NUMBER - MSG_STATE] | (u32)G.msg[MSG_NUMBER - MSG_STATE + 1] << 8 };
+    for (int p = 0; p < 2; p++)
+        if (now[p] != last[p]) {
+            printf("coop: field %u %s message %u\n", ac3_vblank_count(), p ? "guest's" : "host's", now[p]);
+            last[p] = now[p];
+        }
+}
+
+int coop_kill_messages(ctx_t *ctx, u32 target) {
+    if (!G.live || !G.replaying || !msg_state()) return 0;
+    u32 slots = MEM_R32(SLOT_TABLE);
+    if (!ram_ptr(slots)) return 0;
+    int found[N_SLOTS];
+    unsigned n = 0;
+    if (target == FN_AI_FIRST) {
+        for (u32 s = SLOT_FIRST_AIRCRAFT; s < SLOT_FIRST_GROUND; s++) {
+            int m = guest_kill_message(slot_entity(slots, s), MEM_R32(SLOT_FLAGS + 4u * s), 0);
+            if (m >= 0) found[n++] = m;
+        }
+    } else {
+        u32 i = ctx->r[4], list = MEM_R32(WEAPON_LIST);
+        if (i >= N_SLOTS - SLOT_FIRST_GROUND || !ram_ptr(list)) return 0;
+        int m = guest_kill_message(MEM_R32(list + 4u * i), MEM_R32(SLOT_FLAGS + 4u * (SLOT_FIRST_GROUND + i)), 1);
+        if (m >= 0) found[n++] = m;
+    }
+    if (!n) return 0;
+    ac3_interpret(ctx, target);
+    ctx_t after = *ctx;
+    for (unsigned k = 0; k < n; k++) call_guest(ctx, FN_SHOW_MESSAGE, (u32)found[k], 0, 0, 0);
+    if (coop_debug > 0) printf("coop: field %u guest's kill: message %d\n", ac3_vblank_count(), found[0]);
     *ctx = after;
     return 1;
 }
@@ -203,6 +304,10 @@ static void label_other_player(ctx_t *ctx) {
 int coop_hud_hook(ctx_t *ctx, u32 target) {
     switch (target) {
     case FN_SHOW_WARNING:    return warn_both(ctx);
+    case FN_SHOW_MESSAGE:    return show_message(ctx);
+    case FN_MSG_VOICE:
+    case FN_MSG_SOUND_STOP:
+    case FN_MSG_SOUND:       return G.quiet;
     case FN_PROJECT_TARGETS: return G.live && run_then(ctx, target, project_other_player);
     case FN_DRAW_LABELS:     return G.live && run_then(ctx, target, label_other_player);
     case FN_DRAW_RADAR:      return G.live && run_then(ctx, target, radar_other_player);

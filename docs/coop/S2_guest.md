@@ -248,7 +248,8 @@ and takes the point off the guest. Not covered by the recordings so far
 `0x800850D8` (every frame after the player update) makes the effects around
 "the player": spray/wake when low (`0x80082E80`), the scene's weather around it
 at speed (`0x80084F6C`, reads the speed in the aircraft block), scene 0x2A's
-effect (`0x80084E6C`) and a flash (`0x800831D0`, from `0x80090148`). Each call
+effect (`0x80084E6C`) and a flash (`0x800831D0`, from `0x80090148`; now one
+per player, see "the weapon-fire flash" below). Each call
 from there is now run a second time for the other player: slots 0 and 1
 exchanged, the other player's aircraft block swapped in, the entity arguments
 pointed at the other entity. In the guest's view replay the other player is
@@ -410,3 +411,64 @@ Both are drawn in each player's own view (the host's in the frame, the
 guest's in its replay). Checked: the yellow blip on both radars (X recording)
 and the FRND label on the host seen from the guest (`gloop.ac3i`, fields
 7,819 and 7,841); host's and guest's computers byte-identical (Megafloat, X).
+
+## Fourth browser test (2026-10-30): kill text, screen shake, weapon flash
+
+Found in the user's recording `coop_20261030201238.ac3i` (convoy/city
+mission; on the bench as `runs/B.ac3i`, run with `--coop-p2` on itself).
+
+### BINGO / BULLS EYE showed for the host's kills only, on both screens (fixed)
+
+The big text in the middle of the screen is `FN_SHOW_MESSAGE` (`0x8004CEB0`,
+message n of the table at `0x800B1A10`: 6 BINGO, 7 BULLS EYE, 0x2E TARGETED,
+0 MISSION ACCOMPLISHED, 4 ENGAGE, 0xE HOLD YOUR FIRE, ...). Its state
+(`gp+0x478` -> 0x120 bytes: letters, timer, `+0x11C` the message number) is
+ticked and drawn in the flight frame's drawing (`0x800337BC` ->
+`0x8004C998`), so the guest's view replay drew the host's message.
+
+A kill message is shown when an aircraft (`FN_AI_FIRST`, call at
+`0x800467E8`) or ground object (`0x800520C8`, call at `0x80052230`) goes down
+with `SLOT_FLAGS` (`0x800C6FD0` + 4 x slot) bits 1 and 0x800 set, and its last
+attacker (entity `+0x50`, a handle) in slot 0. The guest's kills have slot 1
+there, so nobody got a message. (In the recording: slots 5 and 8 shot down by
+the guest at fields 4,519 and 5,405, slots 9 and 10 by an ally, slot 7 by the
+host at 10,991.)
+
+Now the message state is part of each player's HUD state (`coop_hud_swap`):
+- the mission's messages are raised on both copies (the second time without
+  the sound), and the guest's view replay leaves them alone;
+- HOLD YOUR FIRE (from the HUD's own code) goes to whoever's HUD raised it;
+- the host's kills stay on the host's copy (the replay skips them);
+- the guest's kills are found in the view replay with the game's own checks
+  (attacker in slot 1) and shown on the guest's copy.
+
+`AC3_COOP_DEBUG=1` logs each copy's message number as it changes: on B, the
+guest's 7 at 4,519 and 5,405, the host's 7 at 10,991.
+
+### The speed screen shake followed the host (fixed)
+
+The shake (`world+0x28C`, 8 bytes) is cleared by the flight frame before the
+tick and added to by `0x8006CB44` from the player update (speed, damage). It
+was host-only memory, so the guest's own shake was thrown away and the
+guest's view showed the host's. Now the guest's update starts from the value
+before the host's update, its result is kept (`G.shake`) and put into the
+guest's view replay. On B: the host's shake at 3,945..4,185 (guest's none),
+the guest's at 6,237.. (host's none).
+
+### The weapon-fire flash appeared on both planes (fixed)
+
+Firing some weapons (the pulse laser, kind 5) makes the player update call
+`0x80090110`, which starts a flash: one state for the whole game at
+`[gp+0x41C]+0x3948` (frame count, kind | duration << 16). `0x80090148`, from
+`0x800850D8`, ticks it and draws it at slot 0's aircraft (`0x800831D0`). The
+effects change above ran the drawing for the other player too, with the same
+state, so the host's laser flashed on the guest's plane, and the guest's
+firing would have started the one shared flash.
+
+Now each player has their own: the guest's is swapped in during its update,
+and `0x80090148` runs a second time for the other player with that player's
+flash (the view replay uses the copies kept at the snapshot). On B the host's
+laser (field 7,679, kind 5) leaves the guest's flash at 0.
+
+Host's and guest's computers byte-identical on B, X, the Megafloat recording
+and `gloop`.

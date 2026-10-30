@@ -69,8 +69,17 @@ typedef struct {
     u8  hud_lock[HUD_LOCK_LEN];
     u8  hud_rec[N_SLOTS][HREC_SIZE];
     u8  hud_static[N_HUD_STATIC][0x480];
+    u8  msg[MSG_STATE_LEN];  /* the other player's message on screen (BINGO, ...) */
+    int quiet;             /* showing a message again on the other copy: no sound */
+    /* the screen shake: what it was before the player updates, and the guest's */
+    u8  shake_base[8], shake[8];
+    int shake_valid;
+    /* the guest's weapon-fire flash, and its value at the snapshot */
+    u8  flash[FX_FLASH_LEN], flash_snap[FX_FLASH_LEN];
+    int in_guest_update;   /* the guest's player update is running */
     u8 *snap_ram, *keep_buf;
     u8  snap_scratch[1024];
+    u8  host_block[BLOCK_SIZE];   /* the host's aircraft block at the snapshot (the replay overwrites it) */
     ctx_t snap_ctx;
     u32 snap_pc;
     int replaying;         /* the guest's view replay is running */
@@ -105,19 +114,29 @@ static inline s32 dist_to(u32 e, u32 o) {
 }
 static inline u32 flip01(u32 v) { return v == 0u ? 1u : v == 1u ? 0u : v; }
 
+/* ---- timing (AC3_COOP_PROF=1: a line every 600 frames) ------------------- */
+enum { PROF_HOST_UPDATE, PROF_GUEST_UPDATE, PROF_SNAPSHOT, PROF_REPLAY_COPY, PROF_REPLAY_TICK, PROF_REPLAY_DRAW, PROF_AI, N_PROF };
+u64  coop_now_ns(void);
+void coop_prof_add(int what, u64 since_ns);
+void coop_prof_frame(void);
+
 /* ---- between the files ---------------------------------------------------- */
 /* coop_guest.c */
 int  coop_player_update(ctx_t *ctx);            /* PLAYER_UPDATE: the host's, then the guest's */
 /* coop_view.c */
 void coop_view_mark(ctx_t *ctx, u32 resume_pc);
 int  coop_view_after_drawing(ctx_t *ctx);       /* the frame's last drawing call */
+int  coop_view_skip_3d(u32 target);              /* 1: skip this 3D drawing call (host's replay) */
 /* coop_hud.c */
 void coop_hud_swap(void);
 void coop_threat_swap(void);
 int  coop_hud_hook(ctx_t *ctx, u32 target);
+int  coop_kill_messages(ctx_t *ctx, u32 target);  /* FN_AI_FIRST, FN_GROUND_DOWN */
+void coop_message_log(void);
 /* coop_enemies.c */
 int  coop_enemies_hook(ctx_t *ctx, u32 target);
 /* coop_mission.c */
 void coop_guest_hazards(ctx_t *ctx, u32 e);
 int  coop_mission_hook(ctx_t *ctx, u32 target);
+void coop_flash_swap(void);                     /* the guest's weapon-fire flash in/out */
 #endif

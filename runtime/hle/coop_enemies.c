@@ -127,6 +127,7 @@ static int ai_two_groups(ctx_t *ctx, u32 fn) {
     if (!ram_ptr(recs) || !ram_ptr(host) || !ram_ptr(mine) || !ent_live(mine)) return 0;
     if (fn == FN_AI_DECIDE) ai_decide_groups(slots, recs, host, mine);
     if (!G.ai_guest_group) return 0;                /* all the host's: as in single player */
+    u64 t0 = coop_now_ns();
     ctx_t entry = *ctx;
     ai_run_group(ctx, fn, slots, ~G.ai_guest_group);
     *ctx = entry;
@@ -135,6 +136,7 @@ static int ai_two_groups(ctx_t *ctx, u32 fn) {
     ai_run_group(ctx, fn, slots, G.ai_guest_group);
     players_exchanged = 0;
     exchange_players(slots, recs);
+    coop_prof_add(PROF_AI, t0);
     return 1;
 }
 
@@ -240,7 +242,8 @@ int coop_enemies_hook(ctx_t *ctx, u32 target) {
     case FN_AI_DECIDE:
     case FN_AI_MOVE:
     case FN_AI_WEAPON:       return ai_two_groups(ctx, target);
-    case FN_AI_FIRST:        return clear_guest_alert();
+    case FN_AI_FIRST:        clear_guest_alert(); return coop_kill_messages(ctx, target);
+    case FN_GROUND_DOWN:     return coop_kill_messages(ctx, target);
     case FN_GROUND_WEAPON:   return ground_weapon(ctx);
     case FN_MISSILE_LAUNCH:  return launch_real_slots(ctx);
     case FN_LOCK_ALERT:      return lock_alert(ctx);

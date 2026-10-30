@@ -59,6 +59,8 @@ static int create_guest(u32 slots) {
     G.live = 1;
     G.cam_valid = 0;          /* the world (and its camera) moves between missions */
     G.hud_valid = 0;
+    G.shake_valid = 0;
+    memset(G.flash, 0, sizeof G.flash);       /* no weapon-fire flash */
     G.ai_guest_group = 0;
     G.flight_table = slots;
     G.created_field = ac3_vblank_count();
@@ -161,6 +163,15 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     guest_camera_swap(host, mine);
     coop_hud_swap();
     coop_threat_swap();
+    coop_flash_swap();
+    /* The screen shake (WORLD_SHAKE, host-only) is cleared each frame and
+     * added to by the player update (FN_SHAKE_ADD: speed, damage). The guest's
+     * starts from what it was before the host's update; its view replay uses
+     * the guest's result (coop_view.c). */
+    u32 world = MEM_R32(WORLD_PTR);
+    int shake = ram_ptr(world);
+    if (shake) copy_in(world + WORLD_SHAKE, G.shake_base, 8);
+    G.in_guest_update = 1;
 
     ctx_t saved = *ctx;
     call_guest(ctx, FN_INPUT_MAP, CTRL_PORT2, INPUT_MAP, INPUT_MAP + 0x3Cu, 0);
@@ -176,8 +187,12 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     }
     if (coop_debug && G.updates % 30u == 0) debug_dump(slots);
     *ctx = saved;             /* the host's results (v0/v1) stand */
+    G.in_guest_update = 0;
+    if (shake) copy_out(world + WORLD_SHAKE, G.shake, 8);
+    G.shake_valid = shake;
 
     /* swap the host back */
+    coop_flash_swap();
     coop_threat_swap();
     coop_hud_swap();
     guest_camera_swap(host, mine);
@@ -194,10 +209,19 @@ int coop_player_update(ctx_t *ctx) {
     if (G.replaying) return 0;
     u32 resume = ac3_guest_ra;           /* where the tick continues */
     ctx_t entry = *ctx;
+    coop_prof_frame();
+    u32 world = MEM_R32(WORLD_PTR);
+    if (ram_ptr(world)) copy_out(world + WORLD_SHAKE, G.shake_base, 8);   /* before either player's shake */
+    u64 t0 = coop_now_ns();
     ac3_interpret(ctx, FN_PLAYER_UPDATE);
+    coop_prof_add(PROF_HOST_UPDATE, t0);
     ctx_t host_result = *ctx;
+    u64 t1 = coop_now_ns();
     guest_update(ctx, &entry);
+    coop_prof_add(PROF_GUEST_UPDATE, t1);
     *ctx = host_result;
+    u64 t2 = coop_now_ns();
     coop_view_mark(ctx, resume);
+    coop_prof_add(PROF_SNAPSHOT, t2);
     return 1;
 }

@@ -98,3 +98,20 @@ where it stops matching run A.
 
 All probes are compiled only with `AC3_COOP_PROBE`; the website build has none
 of this.
+## Performance
+
+Co-op runs the game's frame, then the guest's update, then a replay of the
+frame's drawing part for the guest's view. With `AC3_COOP_PROF=1` the
+headless and web builds print a timing line every 600 frames (host update,
+guest update, snapshot, replay copies, replay tick, replay draw, enemy AI).
+
+- The replay runs directly in the snapshot buffer (`ac3_ram` points at it
+  for the duration) instead of copying 2 MB of memory three times a frame.
+  The host's aircraft block for the effects replay is kept in
+  `G.host_block` at the snapshot.
+- On the host's computer nobody sees the guest's picture, so the replay
+  skips the flight frame's 3D drawing (`FN_DRAW_TERRAIN`, `FN_DRAW_WORLD`,
+  `coop_view_skip_3d`). The HUD's decisions are unchanged: both computers'
+  memory hashes stay identical (`tools/coop/hashcmp.py`).
+
+Flight frame on the host's computer: 3.37 ms before, about 2.7 ms after.

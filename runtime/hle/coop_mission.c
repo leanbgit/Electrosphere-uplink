@@ -80,31 +80,29 @@ static int mission_rules_for_both(ctx_t *ctx) {
 /* ---- effects around the player -----------------------------------------------
  * 0x800850D8 (every frame after the player update) makes the effects around
  * "the player": its vapour/wake (FN_FX_WAKE), the scene's weather around it
- * at speed (FN_FX_WEATHER, reads the speed in the aircraft block), scene
- * 0x2A's effect (FN_FX_SCENE2A), and a flash (FN_FX_FLASH). Each
- * call from there (recognised by its return address) is also run for the
+ * at speed (FN_FX_WEATHER, reads the speed in the aircraft block) and scene
+ * 0x2A's effect (FN_FX_SCENE2A). Each call from there (recognised by its return address) is also run for the
  * other player: slots 0 and 1 exchanged, the other player's aircraft block in,
  * the entity arguments pointed at the other entity. The guest's view replay
  * does the same the other way round (the host's block is in the saved RAM
- * then), so each view sees both planes' effects. */
+ * then, kept by coop_view_mark), so each view sees both planes' effects. */
 static const struct { u32 fn, ra; int needs_health; } fx_calls[] = {
     { FN_FX_WAKE,    RA_FX_WAKE,    0 },
     { FN_FX_WEATHER, RA_FX_WEATHER, 1 },
     { FN_FX_SCENE2A, RA_FX_SCENE2A, 1 },
-    { FN_FX_FLASH,   RA_FX_FLASH,   0 },
 };
 #define N_FX_CALLS (sizeof fx_calls / sizeof fx_calls[0])
 static void other_block_swap(u8 *tmp, int first) {
     u32 pp = pp_addr(PP_BLOCK), n = coop_per_player[PP_BLOCK].len;
     if (!G.replaying) { exchange(pp, G.mine[PP_BLOCK], n); return; }
-    if (first) memcpy(tmp, G.snap_ram + (pp & AC3_RAM_MASK), n);
+    if (first) memcpy(tmp, G.host_block, n);
     exchange(pp, tmp, n);
 }
 static int fx_for_both(ctx_t *ctx, unsigned k) {
     u32 slots = MEM_R32(SLOT_TABLE);
     if (!ram_ptr(slots)) return 0;
     u32 a = slot_entity(slots, 0), b = slot_entity(slots, 1);
-    if (!ram_ptr(a) || !ram_ptr(b) || !ram_ptr(pp_addr(PP_BLOCK)) || (G.replaying && !G.snap_ram)) return 0;
+    if (!ram_ptr(a) || !ram_ptr(b) || !ram_ptr(pp_addr(PP_BLOCK))) return 0;
     ctx_t entry = *ctx;
     ac3_interpret(ctx, fx_calls[k].fn);
     ctx_t after = *ctx;
@@ -127,9 +125,57 @@ static int fx_for_both(ctx_t *ctx, unsigned k) {
     return 1;
 }
 
+/* ---- the weapon-fire flash ---------------------------------------------------
+ * Firing some weapons (the pulse laser, ...) starts a flash at the player's
+ * aircraft: the player update calls FN_FLASH_START, which sets FX_FLASH_STATE
+ * (one for the whole game), and 0x800850D8 ticks it and draws it at slot 0
+ * (FN_FX_FLASH_TICK). Each player has their own: the guest's (G.flash) is in
+ * during its update (coop_flash_swap), so it is the guest's firing that
+ * starts it, and FN_FX_FLASH_TICK runs once more for the other player with
+ * the other player's flash, the players exchanged as for the effects above.
+ * The guest's view replay runs it the other way round, from the copies the
+ * snapshot kept (the host's in the saved RAM, the guest's in G.flash_snap). */
+static u32 flash_state(void) {
+    u32 fx = MEM_R32(FX_PTR);
+    return ram_ptr(fx) ? fx + FX_FLASH_STATE : 0u;
+}
+void coop_flash_swap(void) {
+    u32 st = flash_state();
+    if (st) exchange(st, G.flash, FX_FLASH_LEN);
+}
+static int flash_for_both(ctx_t *ctx) {
+    u32 slots = MEM_R32(SLOT_TABLE), st = flash_state();
+    if (!ram_ptr(slots) || !st) return 0;
+    u32 a = slot_entity(slots, 0), b = slot_entity(slots, 1);
+    if (!ram_ptr(a) || !ram_ptr(b) || !ram_ptr(pp_addr(PP_BLOCK))) return 0;
+    u8 other[FX_FLASH_LEN];
+    if (G.replaying) {                          /* the guest's is "the player's" */
+        copy_out(st, other, FX_FLASH_LEN);
+        copy_in(st, G.flash_snap, FX_FLASH_LEN);
+    }
+    ctx_t entry = *ctx;
+    ac3_interpret(ctx, FN_FX_FLASH_TICK);
+    ctx_t after = *ctx;
+    if (ent_live(b)) {
+        *ctx = entry;
+        if (G.replaying) copy_in(st, other, FX_FLASH_LEN);
+        else exchange(st, G.flash, FX_FLASH_LEN);
+        u8 tmp[0x100];
+        MEM_W32(slots, b); MEM_W32(slots + 4, a);
+        other_block_swap(tmp, 1);
+        ac3_interpret(ctx, FN_FX_FLASH_TICK);
+        other_block_swap(tmp, 0);
+        MEM_W32(slots, a); MEM_W32(slots + 4, b);
+        if (!G.replaying) exchange(st, G.flash, FX_FLASH_LEN);
+    }
+    *ctx = after;
+    return 1;
+}
+
 int coop_mission_hook(ctx_t *ctx, u32 target) {
     if (target == FN_MISSION_RULES) return mission_rules_for_both(ctx);
     if (!G.live) return 0;
+    if (target == FN_FX_FLASH_TICK && ac3_guest_ra == RA_FX_FLASH_TICK) return flash_for_both(ctx);
     for (unsigned k = 0; k < N_FX_CALLS; k++)
         if (target == fx_calls[k].fn && ac3_guest_ra == fx_calls[k].ra) return fx_for_both(ctx, k);
     return 0;

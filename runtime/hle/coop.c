@@ -16,11 +16,37 @@ int ac3_coop_intercept(ctx_t *ctx, u32 target) {
     switch (target) {
     case FN_PLAYER_UPDATE: return coop_player_update(ctx);
     case FN_DRAW_LAST:     return coop_view_after_drawing(ctx);
+    case FN_DRAW_TERRAIN:
+    case FN_DRAW_WORLD:    return coop_view_skip_3d(target);
     }
     return coop_hud_hook(ctx, target) || coop_enemies_hook(ctx, target) || coop_mission_hook(ctx, target);
 }
 
 int ac3_coop_replaying(void) { return G.replaying; }
+
+/* ---- timing ------------------------------------------------------------------ */
+#include <time.h>
+static int prof_on = -1;
+static u64 prof_ns[N_PROF], prof_frames, prof_start;
+u64 coop_now_ns(void) {
+    if (prof_on < 0) { const char *e = getenv("AC3_COOP_PROF"); prof_on = e && *e && *e != '0'; }
+    if (!prof_on) return 0;
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return (u64)t.tv_sec * 1000000000ull + (u64)t.tv_nsec;
+}
+void coop_prof_add(int what, u64 since) { if (prof_on > 0) prof_ns[what] += coop_now_ns() - since; }
+void coop_prof_frame(void) {
+    if (prof_on <= 0) return;
+    u64 now = coop_now_ns();
+    if (!prof_start) prof_start = now;
+    if (++prof_frames < 600u) return;
+    static const char *name[N_PROF] = { "host update", "guest update", "snapshot", "replay copies", "replay tick", "replay draw", "enemy AI" };
+    double total = (double)(now - prof_start) / prof_frames / 1e6;
+    printf("coop prof: %.3f ms per frame:", total);
+    for (int i = 0; i < N_PROF; i++) printf(" %s %.3f", name[i], (double)prof_ns[i] / prof_frames / 1e6);
+    printf("\n");
+    memset(prof_ns, 0, sizeof prof_ns); prof_frames = 0; prof_start = now;
+}
 
 /* Once per field (psyq_etc.c). A mission is over when
  *   - the slot table moves (menus and briefings use their own), or

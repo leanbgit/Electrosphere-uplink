@@ -27,6 +27,10 @@
 #define FN_DRAW_LAST         0x80033814u   /* the flight frame's last drawing call */
 #define RA_DRAW_LAST         0x80033DA8u   /*   ... its return address */
 #define RA_AFTER_TICK        0x80033A8Cu   /* the flight frame, just after it called the tick (by pointer) */
+#define FN_DRAW_TERRAIN      0x80033324u   /* the flight frame's 3D drawing: ground and effects ... */
+#define RA_DRAW_TERRAIN      0x80033CF4u
+#define FN_DRAW_WORLD        0x8003346Cu   /* ... aircraft, objects, particles, sky */
+#define RA_DRAW_WORLD        0x80033D0Cu
 
 /* enemies */
 #define FN_ACTIVATE_AIRCRAFT 0x80038100u   /* sets "active" on aircraft (slots 2..31) near the player */
@@ -36,6 +40,9 @@
 #define FN_AI_DECIDE         0x800469ECu   /*   decisions (target choice 0x80046124) */
 #define FN_AI_MOVE           0x80046DFCu   /*   manoeuvres */
 #define FN_AI_WEAPON         0x8004701Cu   /*   attacks */
+#define RA_KILL_AIRCRAFT     0x800467F0u   /* FN_AI_FIRST showing BINGO / BULLS EYE for an aircraft the player shot down */
+#define FN_GROUND_DOWN       0x800520C8u   /* (i): ground/ship object i of WEAPON_LIST, when it is destroyed */
+#define RA_KILL_GROUND       0x80052238u   /*   ... showing BULLS EYE (or TARGETED) when the player destroyed it */
 #define FN_GROUND_WEAPON     0x80052FA8u   /* (i): ground/ship weapon i of WEAPON_LIST, once per frame */
 #define FN_LOCK_ALERT        0x800535D4u   /* (i): weapon i locking on; raises the lock-on alert half-way */
 #define FN_MISSILE_LAUNCH    0x800685C0u   /* (shooter, ..., target handle in a3): a missile */
@@ -50,18 +57,27 @@
 #define FN_DRAW_RADAR        0x8003DE5Cu   /* draws the radar's blips (slots 2..63) */
 #define FN_DRAW_RADAR_BLIP   0x8003DFF8u   /* (&blip): one blip */
 #define FN_ROTTRANSPERS      0x800A7358u   /* Psy-Q RotTransPers(&svector, &sxy, &p, &flag) */
+#define FN_SHOW_MESSAGE      0x8004CEB0u   /* (n): the big text in the middle of the screen, MSG_* (table at 0x800B1A10) */
+#define RA_HOLD_FIRE_1       0x80040C2Cu   /*   HOLD YOUR FIRE, from the HUD's target code (each player's own) */
+#define RA_HOLD_FIRE_2       0x80040E04u
+#define FN_MSG_VOICE         0x8002F19Cu   /*   the sounds FN_SHOW_MESSAGE plays with a message */
+#define FN_MSG_SOUND_STOP    0x8002C71Cu
+#define FN_MSG_SOUND         0x8002C8D8u
 
 /* the mission */
 #define FN_MISSION_RULES     0x800540E0u   /* per-mission checks on the player, once per frame */
 #define FN_HAZARD_DAMAGE     0x80076FA4u   /* takes a point of health off slot 0, shakes the screen */
+#define FN_SHAKE_ADD         0x8006CB44u   /* (kind): adds to WORLD_SHAKE (speed, damage; from the player update) */
 #define FN_FX_WAKE           0x80082E80u   /* effects around the player, all called from 0x800850D8 */
 #define RA_FX_WAKE           0x8008511Cu   /*   (recognised by their return addresses) */
 #define FN_FX_WEATHER        0x80084F6Cu
 #define RA_FX_WEATHER        0x80085154u
 #define FN_FX_SCENE2A        0x80084E6Cu
 #define RA_FX_SCENE2A        0x80085198u
-#define FN_FX_FLASH          0x800831D0u
-#define RA_FX_FLASH          0x80090200u   /*   (called by 0x80090148) */
+#define FN_FX_FLASH_TICK     0x80090148u   /* (&flash): the weapon-fire flash at slot 0's aircraft (FX_FLASH_STATE) */
+#define RA_FX_FLASH_TICK     0x800851DCu
+#define FN_FX_FLASH          0x800831D0u   /*   ... which draws it */
+#define FN_FLASH_START       0x80090110u   /* (duration << 16 | kind): starts it (the player update, when firing) */
 
 /* ==== 2. global data ========================================================== */
 
@@ -83,6 +99,8 @@
 #define BLOCK_PTR            (GAME_GP + 0x514u)  /* -> the player's aircraft state block (BLOCK_*); moves between missions */
 #define PLAYER_MODE_PTR      (GAME_GP + 0x520u)  /* -> the player's mode (MODE_*), inside the block */
 #define CAMERA_STATE_PTR     (GAME_GP + 0x524u)  /* -> the player's camera/target state (CAMST_*), inside the block */
+#define FX_PTR               (GAME_GP + 0x41Cu)  /* -> the effects' state (FX_*) */
+#define MESSAGE_PTR          (GAME_GP + 0x478u)  /* -> the message on screen (MSG_*) */
 
 #define SCENE                0x800BF2D0u   /* the scene SCENE_PTR points to during flights */
 #define ENGINE_SOUND         0x800C5830u   /* the player's engine sound channels, 0x40 bytes */
@@ -105,6 +123,10 @@
 #define RADAR_RANGE          0x800C6D7Cu   /* word */
 #define AI_TABLE             0x800C6D80u   /* 4 bytes per slot (AIT_*) */
 #define WARN_STATE           0x800C7180u   /* the warning on screen: number, time left, two animation records */
+#define SLOT_FLAGS           0x800C6FD0u   /* 4 bytes per slot (SF_*), aircraft and ground objects */
+#define   SF_DOWN            0x00001u      /*   destroyed, not handled yet */
+#define   SF_KILL_MESSAGE    0x00800u      /*   a kill message may be shown */
+#define   SF_SCRIPTED        0x80000u      /*   (aircraft) handled by the mission instead */
 #define RETICLE_RING         0x800C79C8u   /* gun reticle: 32 bullet positions, one per frame */
 
 /* ==== 3. data structures ======================================================== */
@@ -122,7 +144,11 @@
 #define ENT_ROT          0x18u   /* rotation, 3 halfwords */
 #define ENT_HEADING      0x1Au
 #define ENT_VEL          0x38u   /* velocity */
+#define ENT_KIND         0x48u   /* halfword: what it is */
 #define ENT_HEALTH       0x4Eu   /* halfword */
+#define ENT_ATTACKER     0x50u   /* handle of the last one to hit it (low 6 bits: its slot) */
+#define   ENT_NO_MESSAGE 0x40u     /* (ENT_WORD) no kill message */
+#define   ENT_MESSAGE    0x80u     /* (ENT_WORD) a kill message */
 #define WPN_TARGET       0x5Bu   /* ground/ship weapons: target slot, 0xFF = none */
 
 static inline int ent_live(u32 e)      { return (MEM_R32(e + ENT_WORD) & ENT_LIVE) != 0; }
@@ -146,6 +172,19 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define WORLD_CAMERA_OBJ 0x0B8u  /* the camera object, 0xE8 bytes */
 #define WORLD_SHAKE      0x28Cu  /* screen shake, 8 bytes */
 #define CAMOBJ_POS       0x04u   /* camera position, 3 words */
+
+/* the effects' state */
+#define FX_FLASH_STATE   0x3948u /* weapon-fire flash: frame count (0 = none), kind | duration << 16 */
+#define FX_FLASH_LEN     8u
+
+/* the message on screen (FN_SHOW_MESSAGE; drawn and timed by 0x8004C998 in the
+ * flight frame's drawing) */
+#define MSG_STATE        0x008u  /* from here to the end: its letters, timer and number */
+#define MSG_STATE_LEN    0x118u
+#define MSG_NUMBER       0x11Cu  /* the message showing (0xFF: none) */
+#define MSG_BINGO        6u
+#define MSG_BULLS_EYE    7u
+#define MSG_TARGETED     0x2Eu
 
 /* the scene */
 #define SCENE_FLAGS      0x000u  /* bit 0x20000000: the flight is paused/over */
