@@ -217,7 +217,7 @@ static void hd_frame(void) {
 }
 #endif
 
-/* co-op, guest's computer: its own picture (runtime/hle/coop.c); otherwise ac3_vram.
+/* co-op, guest's computer: its own picture (runtime/hle/coop_view.c); otherwise ac3_vram.
  * In the local split view (--coop-split) the main picture stays the host's and
  * the guest's goes out separately (web_frame_end). */
 static void convert_display_from(const gpu_display_t *d, const u16 *vram);

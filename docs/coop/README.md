@@ -8,6 +8,23 @@ the project's `COOP_ROADMAP.md`; findings so far:
 - [S2_guest.md](S2_guest.md): spike S2, a second aircraft flown from controller port 2
 - [S3_view.md](S3_view.md): spike S3, the guest's own view
 
+## The code
+
+The co-op code is in `runtime/hle/`, split by topic (`coop_internal.h` has
+the overview and the shared state; `coop_game.h` names the game's addresses):
+
+| File | What it does |
+|---|---|
+| `coop.h` | the public entry points the rest of the runtime calls |
+| `coop_game.h` | a map of the game: every function address, data address and structure field the co-op code uses, with a name and what it is |
+| `coop.c` | routes each intercepted game call to the file that handles it; mission start and end |
+| `coop_guest.c` | the guest's aircraft: creating it, swapping it in as "the player" around the player update, its copy of player memory |
+| `coop_view.c` | the guest's own picture: replaying the drawing part of the frame with the guest swapped in |
+| `coop_hud.c` | HUD state per player, warnings, missiles coming at each player, the other player on the radar and on screen |
+| `coop_enemies.c` | enemies treating the guest as a player: waking up, the aircraft AI, ground and ship weapons, missile launches, lock-on alerts |
+| `coop_mission.c` | mission rules about the player's position, hazards, effects around the player's aircraft |
+| `coop_probe.c` | research probes for the headless bench (hashes, logs, RAM images) |
+
 ## Local co-op test page (the Phase 2 checkpoint)
 
 `web/test/coop.html`, copied into `web/dist-public/` by `platform/web/build.sh`
@@ -69,7 +86,7 @@ hash log, and whatever the options ask for.
 | `--coop-wfn FUNC FROM-TO FILE` | every write (outside the stack) made while FUNC and its callees run |
 | `--coop-rfn FUNC FROM-TO FILE` | the same for reads |
 | `--coop-p2 REC` | second controller taken from another recording's port 2 (make one with `tools/coop/make_p2.py`) |
-| `--coop-guest` | the co-op guest aircraft (`runtime/hle/coop.c`, see S2_guest.md) |
+| `--coop-guest` | the co-op guest aircraft (`runtime/hle/coop*.c`, see S2_guest.md) |
 | `--coop-view` | with `--coop-guest`: draw the guest's view (S3_view.md); screenshots show it |
 
 Field windows: the game often runs at 30 frames per second in flight (it waits

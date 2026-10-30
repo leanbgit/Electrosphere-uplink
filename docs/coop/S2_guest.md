@@ -382,3 +382,31 @@ guest takes gun/flak damage from the sites (health 30 -> 22).
 Not exchanged, so unaffected: the camera-distance pass `0x8004833C`, the
 radio/voice pass `0x80049438`, and the destroyed-enemy pass `0x80046600`
 (kill credit by +0x50, last attacker).
+
+## The other player as an ally on screen (2026-10-30)
+
+Neither player showed on the other's radar or had a label: the radar and the
+target labels only cover slots 2..63, and the players (slots 0 and 1) have no
+target record.
+
+- **Radar.** The blips are 12-byte entries per slot at `0x800C6A60` (+0 flags,
+  bit 0 shown; +2 kind: 1 enemy red, 2 ally blue, 3 yellow; +4 heading; +5
+  above/level/below; +6/+7 position; +8 distance), filled by `0x8003DA08`
+  (from the radar view in the scratchpad at [gp+0x43C] and the range at
+  `0x800C6D7C`) and drawn one by one by `0x8003DFF8` from `0x8003DE5C`. After
+  the radar is drawn, `coop.c` fills slot 1's unused entry for the other player
+  the same way and draws it, in yellow so it stands apart from the mission's
+  allies.
+- **FRND label.** `0x8003B34C` projects targets onto the screen and
+  `0x8003F520` labels them (allies: pilot name from the mission's name table,
+  `0x8004084C`, then FRND under it, `0x80040740(3, left, bottom)`; kind 1 is
+  TGT, 2 N.TGT). Right after `0x8003B34C`, while the GTE still holds its camera
+  matrix, the other player is projected the same way (`0x800A7358`
+  RotTransPers, `0x8003B758` size), and after `0x8003F520` a FRND label is
+  drawn under it when it is on screen. No name: the name table only holds the
+  mission's characters.
+
+Both are drawn in each player's own view (the host's in the frame, the
+guest's in its replay). Checked: the yellow blip on both radars (X recording)
+and the FRND label on the host seen from the guest (`gloop.ac3i`, fields
+7,819 and 7,841); host's and guest's computers byte-identical (Megafloat, X).
