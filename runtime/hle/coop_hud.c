@@ -297,8 +297,30 @@ static int run_then(ctx_t *ctx, u32 target, void (*fn)(ctx_t *)) {
     *ctx = after;
     return 1;
 }
+/* The FRND label, and the blue box the game draws round allies. The box
+ * routine (FN_DRAW_BOX) reads the slot's HUD record, and slot 1 has none:
+ * it is given one for the call, on the stack, with what the game puts in an
+ * ally's (shown, whole box, size and centre), then taken away again. */
 static void label_other_player(ctx_t *ctx) {
-    if (MK.on) call_guest(ctx, FN_DRAW_LABEL, LABEL_FRND, (u32)(s32)(MK.x - MK.size), (u32)(s32)(MK.y + MK.size), 0);
+    if (!MK.on) return;
+    call_guest(ctx, FN_DRAW_LABEL, LABEL_FRND, (u32)(s32)(MK.x - MK.size), (u32)(s32)(MK.y + MK.size), 0);
+    u32 m = MEM_R32(MISSION_STATE);
+    if (ram_ptr(m) && (MEM_R32(m) & 4u)) return;              /* the game draws no boxes then either */
+    u32 rec = (ctx->r[29] - 0x80u) & ~7u;
+    for (u32 i = 0; i < HREC_SIZE; i += 4) MEM_W32(rec + i, 0);
+    MEM_W8(rec + HREC_SHOWN, 1);
+    MEM_W16(rec + HREC_BOX_SIZE, (u32)MK.size);
+    MEM_W16(rec + HREC_SCREEN_X, (u32)MK.x);
+    MEM_W16(rec + HREC_SCREEN_Y, (u32)MK.y);
+    MEM_W32(rec + HREC_FLAGS, HREC_FULL_BOX | HREC_NEAR);
+    u32 old_rec = MEM_R32(HUD_RECS + 4u), old_c = MEM_R32(HUD_RECS_C + 4u);
+    MEM_W32(HUD_RECS + 4u, rec);
+    MEM_W32(HUD_RECS_C + 4u, rec + HREC_FLAGS);
+    ctx->r[29] = rec - 0x20u;
+    call_guest(ctx, FN_DRAW_BOX, 1, COLOUR_FRND, 0, 0);
+    MEM_W32(HUD_RECS + 4u, old_rec);
+    MEM_W32(HUD_RECS_C + 4u, old_c);
+    for (u32 i = 0; i < HREC_SIZE; i += 4) MEM_W32(rec + i, 0);
 }
 
 int coop_hud_hook(ctx_t *ctx, u32 target) {

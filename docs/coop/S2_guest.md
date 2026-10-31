@@ -472,3 +472,16 @@ laser (field 7,679, kind 5) leaves the guest's flash at 0.
 
 Host's and guest's computers byte-identical on B, X, the Megafloat recording
 and `gloop`.
+
+### A box round the other player (2026-10-30)
+
+The FRND label had no box. The game draws a target's box from its HUD record
+(`FN_DRAW_BOX`, `0x8003FA80`, called by the label loop `0x8003F520` for box
+style 1, in the label's colour): an ally's record has byte 0 = 1, the box's
+half size and centre at `+6`, `+8`, `+0xA`, and flag `0x100` at `+0xC` (a whole
+box instead of four corners); blue is colour `0xFF4000`. Slot 1 has no
+record (`0x800C67A0 + 4` is 0), so after the label loop the other player is
+given one for the call (on the stack, from the same projection as the
+label), the box is drawn, and the record pointers are put back. Checked in
+the guest's view (`gloop.ac3i`, 7,819 and 7,841); host's and guest's
+computers byte-identical (B, gloop).

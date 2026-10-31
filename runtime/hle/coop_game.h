@@ -53,6 +53,7 @@
 #define FN_PROJECT_TARGETS   0x8003B34Cu   /* targets (slots 2..63) onto the screen; leaves the GTE camera matrix set */
 #define FN_DRAW_LABELS       0x8003F520u   /* target boxes and labels */
 #define FN_DRAW_LABEL        0x80040740u   /* (kind, x, y): a label under a target, LABEL_* */
+#define FN_DRAW_BOX          0x8003FA80u   /* (slot, colour): a target's box from its HUD record (box style 1) */
 #define FN_BOX_SIZE          0x8003B758u   /* (depth): a target box's size */
 #define FN_DRAW_RADAR        0x8003DE5Cu   /* draws the radar's blips (slots 2..63) */
 #define FN_DRAW_RADAR_BLIP   0x8003DFF8u   /* (&blip): one blip */
@@ -215,6 +216,11 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define HREC_SIZE        0x34u
 #define HREC_FLAGS       0x0Cu   /* HREC_NEAR: near the player (distance under about 34,000) */
 #define   HREC_NEAR      0x80u
+#define   HREC_FULL_BOX  0x100u    /* FN_DRAW_BOX: a whole box (allies) rather than four corners */
+#define HREC_SHOWN       0x00u   /* byte: 0 not on screen; 1 shown (green, or the FRND colour) */
+#define HREC_BOX_SIZE    0x06u   /* halfwords: half the box's size, and its centre on screen */
+#define HREC_SCREEN_X    0x08u
+#define HREC_SCREEN_Y    0x0Au
 #define HREC_DIST        0x10u   /* distance to the player (for far targets refreshed every 16 frames) */
 
 /* a radar blip */
@@ -234,6 +240,7 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define LABEL_TGT        1u
 #define LABEL_NTGT       2u
 #define LABEL_FRND       3u
+#define COLOUR_FRND      0xFF4000u  /* the box and label colour of an ally (blue; 0xBBGGRR) */
 
 /* the missile manager: per target slot, who has missiles coming */
 #define MSL_TARGETED     0x00u   /* word: bit n = slot n has a missile coming (slots 0..31) */
