@@ -3,6 +3,7 @@
 #include "ac3_oracle.h"
 
 ac3_pad_t ac3_pad[2];
+int ac3_pad_swap;   /* co-op, the guest's turn in the hangar: controller 2 is read as controller 1 and the other way round */
 
 static u32 pad_buf[2];
 static u32 pad_len[2];
@@ -20,7 +21,7 @@ static void ensure_defaults(void) {
 
 void ac3_pad_fill_buffer(int port, u32 buf) {
     if (!buf) return;
-    const ac3_pad_t *p = &ac3_pad[port];
+    const ac3_pad_t *p = &ac3_pad[ac3_pad_swap ? port ^ 1 : port];
 
     if (!p->connected) {
         MEM_W8(buf + 0, 0xFF);

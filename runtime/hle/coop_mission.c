@@ -92,11 +92,19 @@ static const struct { u32 fn, ra; int needs_health; } fx_calls[] = {
     { FN_FX_SCENE2A, RA_FX_SCENE2A, 1 },
 };
 #define N_FX_CALLS (sizeof fx_calls / sizeof fx_calls[0])
+/* the other player's aircraft block and plane in (first) or out; tmp holds
+ * BLOCK_SIZE + 2 bytes during the view replay, where the other player is the
+ * host (its copies were kept at the snapshot) */
 static void other_block_swap(u8 *tmp, int first) {
     u32 pp = pp_addr(PP_BLOCK), n = coop_per_player[PP_BLOCK].len;
-    if (!G.replaying) { exchange(pp, G.mine[PP_BLOCK], n); return; }
-    if (first) memcpy(tmp, G.host_block, n);
+    if (!G.replaying) {
+        exchange(pp, G.mine[PP_BLOCK], n);
+        exchange(SCENE + SCENE_PLANE, G.mine[PP_PLANE], 2);
+        return;
+    }
+    if (first) { memcpy(tmp, G.host_block, n); memcpy(tmp + n, G.host_plane, 2); }
     exchange(pp, tmp, n);
+    exchange(SCENE + SCENE_PLANE, tmp + n, 2);
 }
 static int fx_for_both(ctx_t *ctx, unsigned k) {
     u32 slots = MEM_R32(SLOT_TABLE);

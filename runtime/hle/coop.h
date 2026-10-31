@@ -14,6 +14,10 @@
 extern int ac3_coop_guest;                 /* 1 = a second, guest-controlled aircraft */
 extern int ac3_coop_view;                  /* 1 = draw the guest's view (the guest's computer) */
 extern int ac3_coop_split;                 /* 1 = show both views (one computer, local test) */
+extern u8  ac3_coop_guest_weapons[3];      /* the guest's hangar choice (SCENE_WEAPONS); 0 = as the host's */
+extern int ac3_coop_guest_plane;           /* the guest's plane (SCENE_PLANE, 0..36); -1 = as the host's */
+int  ac3_coop_hangar_turn(void);            /* 1 while the guest is choosing in the hangar (controller 2 drives it) */
+extern int ac3_coop_hangar_turn_on;        /* 0 = no guest's turn in the hangar (for recordings made without one) */
 int  ac3_coop_intercept(ctx_t *ctx, u32 target);   /* 1 = handled the call */
 void ac3_coop_status(char *out, int cap);   /* one-line state, for logs */
 int  ac3_coop_replaying(void);

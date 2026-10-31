@@ -114,13 +114,16 @@ let fields = 0, lastFields = 0, lastT = 0, guestSeen = false;
 // what the right-hand view showed over the last second while the guest flew:
 // its own picture, or the host's (the guest's view was not drawn)
 let guestLive = false, ownViews = 0, hostViews = 0, reportedHostView = false;
+// the guest's turn in the hangar: after player 1 confirms, controller 2 picks player 2's plane and weapons
+let hangarTurn = false;
 function tick() {
   if (!running) return;
   readSource($('src1').value, pad1);
   readSource($('src2').value, pad2);
   const now = performance.now();
   if (now - lastT > 1000) {
-    $('ro1').textContent = `${Math.round((fields - lastFields) * 1000 / (now - lastT))} fields/s (normal: 60)`;
+    $('ro1').textContent = `${Math.round((fields - lastFields) * 1000 / (now - lastT))} fields/s (normal: 60)` +
+      ($('ro1').dataset.turn ? ' · ' + $('ro1').dataset.turn : '');
     if (guestLive) {
       const bad = hostViews > 0 && hostViews >= ownViews;
       $('ro2').textContent = bad ? `NOT the guest's view: showing the host's picture (${hostViews} of ${ownViews + hostViews} pictures)` : `flying · own view`;
@@ -144,12 +147,26 @@ $('start').onclick = async () => {
     node.connect(audioCtx.destination); await audioCtx.resume(); Atomics.store(ctrl, 1, 1);
   } catch (e) { log('Audio unavailable: ' + e, 'warn'); }
   const extraArgs = ['--coop-guest', '--coop-split'];
+  // Test switches until the guest has its own hangar turn: coop.html?guestPlane=1&guestWeapons=1,1,1
+  // gives the guest that plane (0..36) and those weapon choices (gun, missile, missile; 0 = as the host's).
+  const params = new URLSearchParams(location.search);
+  const guestPlane = params.get('guestPlane');
+  if (guestPlane && /^\d+$/.test(guestPlane) && +guestPlane <= 36) {
+    extraArgs.push('--coop-guest-plane', guestPlane);
+    log('Guest plane: ' + guestPlane);
+  }
+  const guestWeapons = params.get('guestWeapons');
+  if (guestWeapons && /^\d+,\d+,\d+$/.test(guestWeapons)) {
+    extraArgs.push('--coop-guest-weapons', guestWeapons);
+    log('Guest weapons: ' + guestWeapons);
+  }
   if ($('record').checked) {
     const name = `coop_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.ac3i`;
     extraArgs.push('--record-input', '/rec/' + name);
     log('Recording to ' + name + ' (offered for download when you press Stop)');
   }
   fields = 0; guestSeen = false; guestLive = false; reportedHostView = false; lastT = performance.now();
+  hangarTurn = false; delete $('ro1').dataset.turn;
   worker = new Worker('worker.js');
   worker.onmessage = e => {
     const m = e.data;
@@ -157,11 +174,22 @@ $('start').onclick = async () => {
     else if (m.type === 'frame2') {
       draw2(m); if (m.own) ownViews++; else if (guestLive) hostViews++;
       // no guest plane (not in the mission yet, or shot down): player 1's view, dimmed
-      $('v2').classList.toggle('watching', !m.own);
+      $('v2').classList.toggle('watching', !m.own && !hangarTurn);
+      $('v1').classList.toggle('watching', hangarTurn);
     }
     else if (m.type === 'log') { log(m.text); if (/^coop:/.test(m.text)) {
       const t = m.text.replace(/^coop:\s*/, '');
-      if (/created/.test(t)) { guestSeen = true; guestLive = true; reportedHostView = false; $('ro2').textContent = 'flying'; }
+      if (/the guest's turn$/.test(t)) {
+        hangarTurn = true;
+        $('ro1').dataset.turn = 'player 2 is choosing a plane';
+        $('ro2').textContent = 'your turn: choose a plane and weapons (controller 2)';
+      } else if (/the host's turn again$/.test(t)) {
+        hangarTurn = false; delete $('ro1').dataset.turn;
+        $('ro2').textContent = 'player 1 is choosing again; your turn comes after';
+      } else if (/^hangar: guest's plane/.test(t)) {
+        hangarTurn = false; delete $('ro1').dataset.turn;
+        $('ro2').textContent = 'plane picked: joins when player 1 gets control (around "Engage")';
+      } else if (/created/.test(t)) { guestSeen = true; guestLive = true; reportedHostView = false; $('ro2').textContent = 'flying'; }
       else if (/destroyed/.test(t)) { guestLive = false; $('ro2').textContent = 'shot down: watching until the mission ends'; }
       else if (/mission over/.test(t)) { guestLive = false; $('ro2').textContent = 'waiting for the next mission'; }
     } }

@@ -18,11 +18,13 @@ the overview and the shared state; `coop_game.h` names the game's addresses):
 | `coop.h` | the public entry points the rest of the runtime calls |
 | `coop_game.h` | a map of the game: every function address, data address and structure field the co-op code uses, with a name and what it is |
 | `coop.c` | routes each intercepted game call to the file that handles it; mission start and end |
-| `coop_guest.c` | the guest's aircraft: creating it, swapping it in as "the player" around the player update, its copy of player memory |
+| `coop_guest.c` | the guest's aircraft: creating it (with its own plane and weapons), swapping it in as "the player" around the player update, its copy of player memory |
 | `coop_view.c` | the guest's own picture: replaying the drawing part of the frame with the guest swapped in |
 | `coop_hud.c` | HUD state per player, warnings, missiles coming at each player, the other player on the radar and on screen |
 | `coop_enemies.c` | enemies treating the guest as a player: waking up, the aircraft AI, ground and ship weapons, missile launches, lock-on alerts |
 | `coop_mission.c` | mission rules about the player's position, hazards, effects around the player's aircraft |
+| `coop_hangar.c` | the guest's turn in the hangar: after the host confirms, controller 2 picks the guest's plane and weapons |
+| `coop_plane.c` | the guest's own plane model: its file loaded into the extra memory, its textures into the second video memory bank, drawn in its place |
 | `coop_probe.c` | research probes for the headless bench (hashes, logs, RAM images) |
 
 ## Local co-op test page (the Phase 2 checkpoint)

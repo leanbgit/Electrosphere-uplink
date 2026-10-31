@@ -7,6 +7,11 @@
 u32 ac3_cur_func = 0;
 u8 *ac3_ram = NULL;
 u8 *ac3_scratch = NULL;
+u8 *ac3_ext = NULL;
+
+void ac3_ext_enable(void) {
+    if (!ac3_ext) ac3_ext = (u8 *)calloc(1, AC3_EXT_SIZE);
+}
 
 extern const struct { u32 addr; ac3_func_t fn; } ac3_func_table[];
 extern const unsigned ac3_func_table_len;
@@ -24,6 +29,12 @@ static int io_warned[0x2000 / 4];
 
 u32 ac3_mem_read_slow(u32 addr, int size) {
     u32 p = ac3_phys(addr);
+    u8 *x = ac3_ext_ptr(p, (u32)size);
+    if (x) {
+        u32 v = 0;
+        for (int i = 0; i < size; i++) v |= (u32)x[i] << (8 * i);
+        return v;
+    }
     if (p >= 0x1F800000u && p < 0x1F800400u) {
         u8 *s = ac3_scratch + (p - 0x1F800000u);
         u32 v = 0;
@@ -45,6 +56,11 @@ u32 ac3_mem_read_slow(u32 addr, int size) {
 
 void ac3_mem_write_slow(u32 addr, u32 value, int size) {
     u32 p = ac3_phys(addr);
+    u8 *x = ac3_ext_ptr(p, (u32)size);
+    if (x) {
+        for (int i = 0; i < size; i++) x[i] = (u8)(value >> (8 * i));
+        return;
+    }
     if (p >= 0x1F800000u && p < 0x1F800400u) {
         u8 *s = ac3_scratch + (p - 0x1F800000u);
         for (int i = 0; i < size; i++) s[i] = (u8)(value >> (8 * i));

@@ -47,6 +47,18 @@ typedef struct {
 extern u8 *ac3_ram;
 extern u8 *ac3_scratch;
 
+/* Extra memory past the PS1's 2 MB, at 0x80200000 (co-op: the guest's
+ * plane). The game itself never goes there (its heap ends at 0x801FB700);
+ * NULL unless something asked for it (ac3_ext_enable). Reached through the
+ * slow path below, so normal memory accesses are unchanged. */
+#define AC3_EXT_BASE   0x00200000u
+#define AC3_EXT_SIZE   0x80000u
+extern u8 *ac3_ext;
+void ac3_ext_enable(void);
+static inline u8 *ac3_ext_ptr(u32 p, u32 size) {
+    return ac3_ext && p >= AC3_EXT_BASE && p - AC3_EXT_BASE <= AC3_EXT_SIZE - size ? ac3_ext + (p - AC3_EXT_BASE) : NULL;
+}
+
 u32  ac3_mem_read_slow(u32 addr, int size);
 void ac3_mem_write_slow(u32 addr, u32 value, int size);
 

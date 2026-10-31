@@ -16,7 +16,65 @@ const coop_range_t coop_per_player[N_PER_PLAYER] = {
     [PP_POS_COPY]  = { POSITION_COPY,   0x10u },
     [PP_TARGETING] = { TARGETING_STATE, 0x18u },       /* FN_TARGETING's */
     [PP_ALERT]     = { ALERT_STATE,     0x10u },       /* incl. the lock-on / missile alert bits */
+    [PP_WEAPONS]   = { SCENE + SCENE_WEAPONS, SCENE_WEAPONS_LEN },   /* the hangar's weapon choice */
+    [PP_PLANE]     = { SCENE + SCENE_PLANE, 2u },     /* the hangar's plane (effects read it every frame) */
 };
+
+/* The guest's own plane and weapons (until the guest has its own pass
+ * through the hangar: set by the page or the bench, --coop-guest-plane N,
+ * --coop-guest-weapons G,M,S). */
+u8  ac3_coop_guest_weapons[3];
+int ac3_coop_guest_plane = -1;
+
+/* What mission start does with the hangar's choice (FN_PLAYER_SETUP,
+ * 0x8006CF90..0x8006D034), done again for the guest, which starts as a copy
+ * of the host: its aircraft type (ENT_KIND) from PLANE_TYPES, its plane's
+ * figures (FN_PLANE_FIGURES) into its copy of the block, its health, and the
+ * salvo figure from its missile choice. The rest of that setup only resets
+ * the flight state, which the copy already has. The plane's model, textures
+ * and sounds stay the host's (step C, docs/coop/S4_plane_choice.md). */
+static void guest_loadout(ctx_t *ctx, u32 mine) {
+    int plane = ac3_coop_guest_plane >= 0 && ac3_coop_guest_plane <= 36;
+    int weapons = ac3_coop_guest_weapons[0] || ac3_coop_guest_weapons[1] || ac3_coop_guest_weapons[2];
+    if (!plane && !weapons) return;
+    for (u32 i = 0; i < SCENE_WEAPONS_LEN; i++)
+        if (ac3_coop_guest_weapons[i]) G.mine[PP_WEAPONS][i] = ac3_coop_guest_weapons[i];
+    u32 cam = MEM_R32(CAMERA_STATE_PTR), o = cam - pp_addr(PP_BLOCK);
+    if (!ram_ptr(cam) || o > BLOCK_SIZE - (CAMST_MISSILES + 4u)) return;
+    u8 *c = &G.mine[PP_BLOCK][o];                    /* the guest's camera/weapon state */
+    #define PUT32(off, v) do { u32 v_ = (u32)(v); for (u32 b_ = 0; b_ < 4; b_++) c[(off) + b_] = (u8)(v_ >> (8 * b_)); } while (0)
+    u32 stats = (u32)c[CAMST_STATS] | (u32)c[CAMST_STATS + 1] << 8 | (u32)c[CAMST_STATS + 2] << 16 | (u32)c[CAMST_STATS + 3] << 24;
+    if (plane) {
+        G.mine[PP_PLANE][0] = (u8)ac3_coop_guest_plane;
+        G.mine[PP_PLANE][1] = 0;
+        u32 type = MEM_R8U(PLANE_TYPES + (u32)ac3_coop_guest_plane);
+        MEM_W16(mine + ENT_KIND, type);
+        ctx_t saved = *ctx;
+        call_guest(ctx, FN_PLANE_FIGURES, type, 0, 0, 0);
+        stats = ctx->r[2];
+        *ctx = saved;
+        if (!ram_ptr(stats)) return;
+        u32 scene = MEM_R32(SCENE_PTR);
+        s32 health = (s32)MEM_R32(stats + PLANE_HEALTH);
+        if (ram_ptr(scene) && (s32)MEM_R32(scene + SCENE_TWO_PLACES) >= 2) health = 30;
+        PUT32(CAMST_STATS, stats);
+        PUT32(CAMST_FIG_08, MEM_R32(stats + PLANE_FIG_74));
+        PUT32(CAMST_FIG_0C, MEM_R16S(stats + PLANE_FIG_80));
+        PUT32(CAMST_FIG_10, MEM_R16S(stats + PLANE_FIG_82));
+        PUT32(CAMST_HEALTH, health);
+        PUT32(CAMST_MISSILES, MEM_R32(stats + PLANE_MISSILES));
+        MEM_W16(mine + ENT_HEALTH, (u32)health);
+    }
+    if (ram_ptr(stats)) {
+        s32 salvo = MEM_R16S(stats + PLANE_SALVO), limit = MEM_R16S(WEAPON_LIMITS + 2u * G.mine[PP_WEAPONS][1]);
+        PUT32(CAMST_SALVO, limit < salvo ? limit : salvo);
+    }
+    #undef PUT32
+    printf("coop: guest's plane %u (type %u), weapons %u,%u,%u; host's plane %u, weapons %u,%u,%u\n",
+           G.mine[PP_PLANE][0], MEM_R16U(mine + ENT_KIND), G.mine[PP_WEAPONS][0], G.mine[PP_WEAPONS][1], G.mine[PP_WEAPONS][2],
+           MEM_R16U(SCENE + SCENE_PLANE), MEM_R8U(SCENE + SCENE_WEAPONS), MEM_R8U(SCENE + SCENE_WEAPONS + 1),
+           MEM_R8U(SCENE + SCENE_WEAPONS + 2));
+}
 
 /* Host-only memory the player update also writes: the guest's writes are
  * discarded. world = 1: an offset from the world pointer. */
@@ -39,7 +97,7 @@ const coop_range_t coop_view_private[N_VIEW_PRIVATE] = {
 };
 
 /* Create the guest as a copy of the host's aircraft in slot 1, beside it. */
-static int create_guest(u32 slots) {
+static int create_guest(ctx_t *ctx, u32 slots) {
     u32 host = slot_entity(slots, 0), mine = slot_entity(slots, 1);
     if (!ram_ptr(host) || !ram_ptr(mine)) return 0;
     u32 h = MEM_R32(host + ENT_WORD);
@@ -56,6 +114,9 @@ static int create_guest(u32 slots) {
     MEM_W32(mine + ENT_WORD, G.handle);
     MEM_W32(mine + ENT_X, (u32)ent_x(mine) + (150u << 12));   /* 150 units to the side */
     for (unsigned i = 0; i < N_PER_PLAYER; i++) copy_out(pp_addr(i), G.mine[i], coop_per_player[i].len);
+    coop_hangar_flight();
+    guest_loadout(ctx, mine);
+    coop_plane_guest_created(ctx);
     G.live = 1;
     G.cam_valid = 0;          /* the world (and its camera) moves between missions */
     G.hud_valid = 0;
@@ -149,7 +210,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
         printf("coop: slot 1 reused by the game at field %u (0x%05X)\n", ac3_vblank_count(), MEM_R32(mine));
         G.live = 0;
     }
-    if (!G.live && (G.dead || !create_guest(slots))) return;
+    if (!G.live && (G.dead || !create_guest(ctx, slots))) return;
 
     /* swap in the guest */
     for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_out(ho_addr(i), G.keep[i], coop_host_only[i].len);
@@ -172,6 +233,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     int shake = ram_ptr(world);
     if (shake) copy_in(world + WORLD_SHAKE, G.shake_base, 8);
     G.in_guest_update = 1;
+    u32 object = coop_plane_object_in();
 
     ctx_t saved = *ctx;
     call_guest(ctx, FN_INPUT_MAP, CTRL_PORT2, INPUT_MAP, INPUT_MAP + 0x3Cu, 0);
@@ -188,6 +250,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (coop_debug && G.updates % 30u == 0) debug_dump(slots);
     *ctx = saved;             /* the host's results (v0/v1) stand */
     G.in_guest_update = 0;
+    coop_plane_object_out(object);
     if (shake) copy_out(world + WORLD_SHAKE, G.shake, 8);
     G.shake_valid = shake;
 

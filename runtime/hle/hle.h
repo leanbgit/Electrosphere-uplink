@@ -13,7 +13,7 @@
 
 static inline void *guest_ptr(u32 addr, u32 size) {
     u32 p = ac3_phys(addr);
-    if (p >= AC3_RAM_SIZE || size > AC3_RAM_SIZE - p) return NULL;
+    if (p >= AC3_RAM_SIZE || size > AC3_RAM_SIZE - p) return ac3_ext_ptr(p, size);   /* the extra memory, if any */
     return ac3_ram + p;
 }
 

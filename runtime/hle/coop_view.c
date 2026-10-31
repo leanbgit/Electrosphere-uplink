@@ -153,6 +153,7 @@ void coop_view_mark(ctx_t *ctx, u32 resume_pc) {
     memcpy(G.snap_ram, ac3_ram, AC3_RAM_SIZE);
     memcpy(G.snap_scratch, ac3_scratch, sizeof G.snap_scratch);
     copy_out(pp_addr(PP_BLOCK), G.host_block, BLOCK_SIZE);
+    copy_out(SCENE + SCENE_PLANE, G.host_plane, 2);
     memcpy(G.flash_snap, G.flash, sizeof G.flash);   /* the guest's flash before this frame's effects */
     G.snap_ctx = *ctx;
     G.snap_pc = resume_pc;
@@ -195,6 +196,7 @@ static void view_replay(ctx_t *ctx) {
     coop_hud_swap();          /* the guest's lock-on progress in (this RAM is thrown away after) */
     coop_threat_swap();       /* the guest's incoming missiles as "the player's" */
     if (G.shake_valid) copy_in(w + WORLD_SHAKE, G.shake, 8);   /* the guest's screen shake */
+    coop_plane_object_in();   /* the guest's plane model (this RAM is thrown away after) */
     /* The camera follows "the player" through pointers into the host's entity
      * (camera object +0x34 -> its position): point them at the guest's entity. */
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++)

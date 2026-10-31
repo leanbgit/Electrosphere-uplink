@@ -255,6 +255,14 @@ int main(int argc, char **argv) {
                  * --coop-view shows the guest's view (the guest's computer);
                  * --coop-split shows both views (local test page) */
                 else if (strcmp(argv[j], "--coop-guest") == 0) ac3_coop_guest = 1;
+                else if (strcmp(argv[j], "--coop-no-hangar-turn") == 0) ac3_coop_hangar_turn_on = 0;
+                else if (strcmp(argv[j], "--coop-guest-plane") == 0 && j + 1 < argc)
+                    ac3_coop_guest_plane = (int)strtol(argv[++j], NULL, 0);   /* the guest's plane, 0..36 */
+                else if (strcmp(argv[j], "--coop-guest-weapons") == 0 && j + 1 < argc) {
+                    /* the guest's hangar choice, "gun,missile,missile" (0 = as the host's) */
+                    char *s = argv[++j];
+                    for (int k = 0; k < 3 && *s; k++) { ac3_coop_guest_weapons[k] = (u8)strtoul(s, &s, 0); if (*s == ',') s++; }
+                }
                 else if (strcmp(argv[j], "--coop-view") == 0) ac3_coop_view = 1;
                 else if (strcmp(argv[j], "--coop-split") == 0) ac3_coop_view = ac3_coop_split = 1;
 #ifdef AC3_COOP_PROBE

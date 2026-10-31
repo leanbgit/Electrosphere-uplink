@@ -14,6 +14,8 @@
  *   coop_enemies.c  enemies treating the guest as a player: activation, the
  *                   aircraft AI, ground and ship weapons, missile launches
  *   coop_mission.c  mission rules, hazards and effects around the player
+ *   coop_hangar.c   the guest's turn in the hangar (its plane and weapons)
+ *   coop_plane.c    the guest's own plane model (loaded into the extra memory)
  *
  * The one idea used everywhere: the game believes "the player" is slot 0 of
  * the slot table and the memory around it. To make something happen for the
@@ -38,7 +40,7 @@ extern u8  *ac3_scratch;
 typedef struct { u32 addr, len; } coop_range_t;
 
 /* swapped with the host's around the guest's update */
-enum { PP_BLOCK, PP_INPUT_MAP, PP_POS_COPY, PP_TARGETING, PP_ALERT, N_PER_PLAYER };
+enum { PP_BLOCK, PP_INPUT_MAP, PP_POS_COPY, PP_TARGETING, PP_ALERT, PP_WEAPONS, PP_PLANE, N_PER_PLAYER };
 extern const coop_range_t coop_per_player[N_PER_PLAYER];
 /* written by the guest's update but kept as the host's */
 enum { N_HOST_ONLY = 6 };
@@ -80,6 +82,7 @@ typedef struct {
     u8 *snap_ram, *keep_buf;
     u8  snap_scratch[1024];
     u8  host_block[BLOCK_SIZE];   /* the host's aircraft block at the snapshot (the replay overwrites it) */
+    u8  host_plane[2];            /* the host's SCENE_PLANE at the snapshot */
     ctx_t snap_ctx;
     u32 snap_pc;
     int replaying;         /* the guest's view replay is running */
@@ -139,4 +142,12 @@ int  coop_enemies_hook(ctx_t *ctx, u32 target);
 void coop_guest_hazards(ctx_t *ctx, u32 e);
 int  coop_mission_hook(ctx_t *ctx, u32 target);
 void coop_flash_swap(void);                     /* the guest's weapon-fire flash in/out */
+/* coop_plane.c */
+int  coop_plane_hook(ctx_t *ctx, u32 target);    /* the guest's plane model: loading, drawing */
+void coop_plane_guest_created(ctx_t *ctx);
+u32  coop_plane_object_in(void);
+void coop_plane_object_out(u32 old);
+/* coop_hangar.c */
+int  coop_hangar_hook(ctx_t *ctx, u32 target);   /* the guest's turn in the hangar */
+void coop_hangar_flight(void);                  /* a flight began */
 #endif

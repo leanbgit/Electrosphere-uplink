@@ -21,6 +21,21 @@ u32 gpu_sw_prim_count(void) { return prims_drawn; }
 static inline s32 sx11(s32 v) { return (s32)((u32)v << 21) >> 21; }
 
 #define VRAM(x, y) ac3_vram[((u32)(y) & 511u) * GPU_VRAM_W + ((u32)(x) & 1023u)]
+#define MEMV(m, x, y) (m)[((u32)(y) & 511u) * GPU_VRAM_W + ((u32)(x) & 1023u)]
+
+/* A second video memory bank (co-op: the guest's plane's textures). The game
+ * never addresses it: a polygon reads its texture page from it when bit 11
+ * of its texture page is set (the bit Sony's development units used for
+ * their larger video memory) and its colour table when bit 15 of its colour
+ * table is set (unused). NULL unless something put textures there. */
+u16 *ac3_vram_bank;
+void gpu_sw_bank_load(s32 x, s32 y, s32 w, s32 h, const u8 *src) {
+    if (!ac3_vram_bank) ac3_vram_bank = (u16 *)calloc(GPU_VRAM_W * GPU_VRAM_H, 2);
+    if (!ac3_vram_bank || !src) return;
+    for (s32 r = 0; r < h; r++)
+        for (s32 c = 0; c < w; c++, src += 2)
+            MEMV(ac3_vram_bank, x + c, y + r) = (u16)(src[0] | src[1] << 8);
+}
 
 static const s8 dither_matrix[4][4] = {
     { -4,  0, -3,  1 },
@@ -87,6 +102,7 @@ void gpu_sw_gp0_state(u32 w) {
 }
 
 void gpu_sw_texpage_attr(u16 attr) {
+    if (ac3_vram_bank) attr &= (u16)~0x800u;   /* the bank bit stays with its polygon */
     gpu_sw.texpage = (u16)((gpu_sw.texpage & 0x3600u) | (attr & 0x09FFu));
 }
 
@@ -104,6 +120,7 @@ typedef struct {
     int blend;
     u32 page_x, page_y, depth;
     u32 clut_x, clut_y;
+    const u16 *tex, *pal;     /* ac3_vram, or the second bank */
     u32 and_u, or_u, and_v, or_v;
 } shade_t;
 
@@ -120,6 +137,8 @@ static void shade_setup(shade_t *s, int textured, int raw, int semitrans,
     s->depth  = (tpage >> 7) & 3u;
     s->clut_x = (clut & 0x3Fu) * 16u;
     s->clut_y = (clut >> 6) & 0x1FFu;
+    s->tex = (tpage & 0x800u) && ac3_vram_bank ? ac3_vram_bank : ac3_vram;
+    s->pal = (clut & 0x8000u) && ac3_vram_bank ? ac3_vram_bank : ac3_vram;
     u32 mu = tw_mask & 0xFFu, mv = tw_mask >> 8;
     u32 ou = tw_off & 0xFFu,  ov = tw_off >> 8;
     s->and_u = ~mu & 0xFFu; s->or_u = ou & mu;
@@ -132,17 +151,17 @@ static inline u16 texel(const shade_t *s, u32 u, u32 v) {
     u32 y = s->page_y + v;
     switch (s->depth) {
     case 0: {
-        u32 w = VRAM(s->page_x + (u >> 2), y);
+        u32 w = MEMV(s->tex, s->page_x + (u >> 2), y);
         u32 i = (w >> ((u & 3u) * 4u)) & 0xFu;
-        return VRAM(s->clut_x + i, s->clut_y);
+        return MEMV(s->pal, s->clut_x + i, s->clut_y);
     }
     case 1: {
-        u32 w = VRAM(s->page_x + (u >> 1), y);
+        u32 w = MEMV(s->tex, s->page_x + (u >> 1), y);
         u32 i = (w >> ((u & 1u) * 8u)) & 0xFFu;
-        return VRAM(s->clut_x + i, s->clut_y);
+        return MEMV(s->pal, s->clut_x + i, s->clut_y);
     }
     default:
-        return VRAM(s->page_x + u, y);
+        return MEMV(s->tex, s->page_x + u, y);
     }
 }
 

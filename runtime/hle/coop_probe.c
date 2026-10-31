@@ -1,6 +1,7 @@
 /* coop_probe.c -- see coop_probe.h. */
 #ifdef AC3_COOP_PROBE
 #include "coop_probe.h"
+#include "gpu_sw.h"
 #include "hle.h"
 #include "ac3_input.h"
 #include <stdio.h>
@@ -156,6 +157,7 @@ static u64 sim_hash(void) {
     }
     u64 h = hash64(ac3_ram, lo ? lo : AC3_RAM_SIZE);
     if (lo) h ^= hash64(ac3_ram + hi, AC3_RAM_SIZE - hi) * 31u;
+    if (ac3_ext) h ^= hash64(ac3_ext, AC3_EXT_SIZE) * 7u;   /* the extra memory (the guest's plane) */
     return h;
 }
 
@@ -167,9 +169,10 @@ static void field_hash(u32 f) {
     fprintf(P.hash, "%u\t%d\t%d\t%d\t%016llx\t%016llx\t%016llx\t%016llx\t%016llx\n", f,
             ok ? (int)MEM_R32(scene + 44) : -1, ok ? (int)MEM_R32(scene + 48) : -1,
             ok ? (int)MEM_R16S(scene + 908) : -1,
-            (unsigned long long)hash64(ac3_ram, AC3_RAM_SIZE),
+            (unsigned long long)(hash64(ac3_ram, AC3_RAM_SIZE) ^ (ac3_ext ? hash64(ac3_ext, AC3_EXT_SIZE) * 7u : 0)),   /* + the extra memory */
             (unsigned long long)hash64(ac3_scratch, 1024),
-            (unsigned long long)(ac3_vram ? hash64(ac3_vram, 1024 * 512 * 2) : 0),
+            (unsigned long long)((ac3_vram ? hash64(ac3_vram, 1024 * 512 * 2) : 0) ^
+                                 (ac3_vram_bank ? hash64(ac3_vram_bank, 1024 * 512 * 2) * 7u : 0)),   /* + the second bank */
             (unsigned long long)spu, (unsigned long long)sim_hash());
 }
 

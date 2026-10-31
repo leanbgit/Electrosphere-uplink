@@ -47,6 +47,11 @@
 #define FN_LOCK_ALERT        0x800535D4u   /* (i): weapon i locking on; raises the lock-on alert half-way */
 #define FN_MISSILE_LAUNCH    0x800685C0u   /* (shooter, ..., target handle in a3): a missile */
 
+/* the player's plane */
+#define FN_PLANE_FIGURES     0x8006CD6Cu   /* (aircraft type) -> that plane's figures (PLANE_*) */
+#define FN_PLAYER_SETUP      0x8006CE70u   /* (entity): mission start, from the hangar's choice */
+#define PLANE_TYPES          0x800234F8u   /* byte per SCENE_PLANE: the player's aircraft type (ENT_KIND) */
+
 /* HUD */
 #define FN_SHOW_WARNING      0x8004287Cu   /* (n): put warning n on screen, if more urgent than the current one */
 #define FN_PICK_WARNING      0x80042544u   /* the HUD's warning picker (calls FN_SHOW_WARNING) */
@@ -100,6 +105,7 @@
 #define BLOCK_PTR            (GAME_GP + 0x514u)  /* -> the player's aircraft state block (BLOCK_*); moves between missions */
 #define PLAYER_MODE_PTR      (GAME_GP + 0x520u)  /* -> the player's mode (MODE_*), inside the block */
 #define CAMERA_STATE_PTR     (GAME_GP + 0x524u)  /* -> the player's camera/target state (CAMST_*), inside the block */
+#define WEAPON_LIMITS        0x800B3B28u   /* halfword per missile choice (SCENE_WEAPONS + 1): a limit on CAMST_SALVO */
 #define FX_PTR               (GAME_GP + 0x41Cu)  /* -> the effects' state (FX_*) */
 #define MESSAGE_PTR          (GAME_GP + 0x478u)  /* -> the message on screen (MSG_*) */
 
@@ -192,6 +198,9 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define SCENE_MISSION    0x38Cu  /* halfword: mission scene number */
 #define SCENE_TWO_PLACES 0x394u  /* nonzero: each player can have two attackers */
 #define SCENE_SHOT_DOWN  0x958u  /* times the player was shot down */
+#define SCENE_PLANE      0x38Eu  /* halfword: the plane picked in the hangar (0..36; its file is 66 + n) */
+#define SCENE_WEAPONS    0x3A9u  /* 3 bytes: the weapons picked in the hangar (gun, then the two missile */
+#define SCENE_WEAPONS_LEN 3u     /*   slots); the player update reads them every frame */
 
 /* the player's mode */
 #define MODE_STATE       0x04u   /* 1 = has control, 2 = mission intro */
@@ -201,7 +210,22 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define BLOCK_MISSILES   0xB4u   /* halfword: missiles left */
 
 /* the player's camera/target state */
+#define CAMST_STATS      0x00u   /* -> the plane's figures (PLANE_*), set at mission start (0x8006CE70) */
+#define CAMST_SALVO      0x04u   /* PLANE_SALVO, limited by WEAPON_LIMITS[missile choice] */
+#define CAMST_FIG_08     0x08u   /* PLANE_FIG_74 */
+#define CAMST_FIG_0C     0x0Cu   /* PLANE_FIG_80 */
+#define CAMST_FIG_10     0x10u   /* PLANE_FIG_82 */
+#define CAMST_HEALTH     0x14u   /* PLANE_HEALTH (30 when SCENE_TWO_PLACES >= 2), also ENT_HEALTH */
+#define CAMST_MISSILES   0x1Cu   /* PLANE_MISSILES (= BLOCK_MISSILES) */
 #define CAMST_TARGET     0x18u   /* the locked target (the launch code reads it) */
+
+/* a plane's figures (0x8006CD6C(kind) picks the record) */
+#define PLANE_FIG_74     0x74u   /* word */
+#define PLANE_MISSILES   0x78u   /* word */
+#define PLANE_SALVO      0x7Cu   /* halfword */
+#define PLANE_FIG_80     0x80u   /* halfword */
+#define PLANE_FIG_82     0x82u   /* halfword */
+#define PLANE_HEALTH     0x84u   /* word */
 
 /* the AI's records and table */
 #define AIREC_SIZE       0xB8u
