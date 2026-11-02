@@ -11,6 +11,7 @@
  */
 #include "hw_packet.h"
 #include "hw_fx_web.h"
+#include "gpu_sw.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,13 +38,19 @@ void hw_shutdown(void) {
 
 static u8 *buf;
 static size_t cap;
+static u32 bank_sent;          /* ac3_vram_bank_version last sent */
+
+void hw_packet_resend_bank(void) { bank_sent = 0; }
 
 size_t hw_packet_build(u8 **out, u32 seq, u32 flags, const gpu_display_t *d, const u16 *vram) {
     size_t c = (size_t)H.ncmds * sizeof(cmd_t), v = (size_t)H.nverts * sizeof(hw_vtx_t);
     size_t s = PKT_ALIGN4(H.nstaging), r = (flags & PKT_VRAM) && vram ? (size_t)VRAM_W * VRAM_H * 2 : 0;
     if (!r) flags &= ~PKT_VRAM;
+    size_t b = 0;
+    if (ac3_vram_bank && ac3_vram_bank_version != bank_sent) { b = (size_t)VRAM_W * VRAM_H * 2; flags |= PKT_BANK; }
+    else flags &= ~PKT_BANK;
     size_t fx = PKT_ALIGN4(hw_fx_pack_size());      /* world effects: scenes, tiles, map */
-    size_t n = sizeof(hw_packet_hdr_t) + c + v + s + fx + r;
+    size_t n = sizeof(hw_packet_hdr_t) + c + v + s + fx + r + b;
     if (n > cap) {
         u8 *nb = (u8 *)realloc(buf, n);
         if (!nb) { *out = NULL; return 0; }
@@ -62,6 +69,8 @@ size_t hw_packet_build(u8 **out, u32 seq, u32 flags, const gpu_display_t *d, con
     if (fx) hw_fx_pack(p);
     p += fx;
     if (r) memcpy(p, vram, r);
+    p += r;
+    if (b) { memcpy(p, ac3_vram_bank, b); bank_sent = ac3_vram_bank_version; }
 
     /* the field has been handed over: same bookkeeping as the end of hw_record() */
     H.nverts = H.nstaging = H.ncmds = 0;

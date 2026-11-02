@@ -64,7 +64,8 @@ EMSCRIPTEN_KEEPALIVE u32 render_frame(u32 len, int cw, int ch) {
     hw_packet_hdr_t *h = (hw_packet_hdr_t *)pkt;
     size_t c = (size_t)h->ncmds * sizeof(cmd_t), v = (size_t)h->nverts * sizeof(hw_vtx_t);
     size_t r = (h->flags & PKT_VRAM) ? (size_t)VRAM_W * VRAM_H * 2 : 0;
-    if (h->magic != PKT_MAGIC || sizeof *h + c + v + h->nstaging + h->fx_bytes + r != len) return 0;
+    size_t b = (h->flags & PKT_BANK) ? (size_t)VRAM_W * VRAM_H * 2 : 0;
+    if (h->magic != PKT_MAGIC || sizeof *h + c + v + h->nstaging + h->fx_bytes + r + b != len) return 0;
     u8 *p = pkt + sizeof *h;
     H.cmds = (cmd_t *)p;      H.ncmds = h->ncmds;      p += c;
     H.verts = (hw_vtx_t *)p;  H.nverts = h->nverts;    p += v;
@@ -72,6 +73,7 @@ EMSCRIPTEN_KEEPALIVE u32 render_frame(u32 len, int cw, int ch) {
     if (!hw_fx_unpack(p, h->fx_bytes)) printf("renderer: bad effects data in field %u\n", h->seq);
     p += h->fx_bytes;
     const u16 *vram = r ? (const u16 *)p : NULL;
+    if (b) hw_bank_upload_webgpu((const u16 *)(p + r));   /* co-op: the guest's plane's textures */
 
     WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(dev, NULL);
     hw_record_webgpu(enc);     /* also replays uploads etc. when the picture is not shown */

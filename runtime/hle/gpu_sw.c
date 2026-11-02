@@ -27,11 +27,15 @@ static inline s32 sx11(s32 v) { return (s32)((u32)v << 21) >> 21; }
  * never addresses it: a polygon reads its texture page from it when bit 11
  * of its texture page is set (the bit Sony's development units used for
  * their larger video memory) and its colour table when bit 15 of its colour
- * table is set (unused). NULL unless something put textures there. */
+ * table is set (unused); a sprite, which has no texture page of its own,
+ * reads both from it when its colour table's bit is set (psyq_gpu.c,
+ * draw_rect). NULL unless something put textures there. */
 u16 *ac3_vram_bank;
+u32 ac3_vram_bank_version;   /* changes whenever the bank does (the HD renderer re-uploads it) */
 void gpu_sw_bank_load(s32 x, s32 y, s32 w, s32 h, const u8 *src) {
     if (!ac3_vram_bank) ac3_vram_bank = (u16 *)calloc(GPU_VRAM_W * GPU_VRAM_H, 2);
     if (!ac3_vram_bank || !src) return;
+    ac3_vram_bank_version++;
     for (s32 r = 0; r < h; r++)
         for (s32 c = 0; c < w; c++, src += 2)
             MEMV(ac3_vram_bank, x + c, y + r) = (u16)(src[0] | src[1] << 8);

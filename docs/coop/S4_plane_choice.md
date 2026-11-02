@@ -149,9 +149,18 @@ entries 0 and 1 decompressed (`0x800AFD08`) into the extra memory, the parts
 table relocated. Not loaded: its sounds (the guest's plane sounds like the
 host's).
 
-The model's faces are 0x24-byte records with PS1 polygon words: uv0 +
-colour table at `+0x0C`, uv1 + texture page at `+0x10`. Every face using the
-plane's page and colour tables gets the bank bits (191 faces for the F-22C).
+The model's faces hold PS1 polygon words: a colour table halfword, then the
+texture page 4 bytes later (uv0 + colour table, uv1 + texture page). Faces
+are not all the same size (most are 0x18 bytes apart), so every halfword is
+checked: one whose colour table is the plane's (x 336, rows 312..319) and is
+followed by the plane's texture page is a face, and gets the bank bits (372
+faces for the F-22C; between 213 and 517 for the others). Every plane was
+checked: no face with the plane's colour tables is left unmarked (the one
+near-match in planes 1 and 12 is vertex data, not followed by a texture page).
+
+An earlier version jumped 0x24 bytes after each face it found, missing about
+half of them; those faces read the host's plane textures (a Geopelia flown
+next to an F/A-18 had blue patches).
 
 **Drawing.** `0x80067494` (from `0x80068334`, from `0x8003342C`) draws both
 players' planes from a list (16-byte items; slot 0 has flag 2, the other
@@ -169,10 +178,34 @@ the guest is drawn as the F-22C with its own colours in both views (matching
 the F-22C flown by the host on its own); host's and guest's computers
 byte-identical, extra memory and second bank included.
 
+**HD pictures (WebGPU).** The enhanced renderer runs in its own worker in
+the browser, fed one packet per field (`renderer/webgpu/hw_packet.h`). The
+bank goes with the next packet whenever it changes (`PKT_BANK`, normally
+once per mission, and again when the renderer starts) and becomes a fourth
+texture of the primitive shader (raw 16-bit texels, binding 3);
+`hw_prim.frag` reads texture pages and colour tables from it under the same
+bits. That part of the shader is built only for WebGPU
+(`tools/shaders_to_wgsl.py` defines `AC3_BANK`): co-op runs only in the
+browser build, so the native Vulkan renderer is unchanged.
+
+**The HUD's plane picture.** A sprite (code `0x64..0x67`) with the plane
+file's HUD colour table (432, 509), which the guest's file also loaded into
+the bank. A sprite has no texture page of its own (it uses the drawing
+mode's), so for sprites the colour table's bank bit picks the bank for both
+(`psyq_gpu.c`, `draw_rect`). In the guest's view replay, before its picture
+is kept, that sprite gets the bit (`coop_plane_patch_view`); the replay's
+memory is thrown away, so only the guest's picture changes. Checked: the
+guest's HUD shows the F-22C, the host's the F-15S/MT; both computers
+byte-identical, memory the same as without the patch.
+
+**Different graphics settings on the two computers** stay in sync: the
+software renderer (which keeps the game's video memory) always runs and
+always has the bank; the HD renderer only makes the picture on screen.
+
 ## Still to find
 
-- The HD and WebGPU renderers do not have the second bank yet: there the
-  guest's plane has its own shape but the host's textures.
-- The guest's plane sounds like the host's (its sounds are not loaded).
-- The HUD's small plane picture is drawn from the host's file in the guest's
-  view too.
+- The guest's plane sounds like the host's: its sounds are not loaded, and
+  the guest's engine sound is not played at all (it is host-only memory).
+  Both belong with the guest's own sound, which has to be played on the
+  guest's computer only, outside the emulated sound chip (the game reads the
+  chip's state every frame, so it must stay identical on both computers).

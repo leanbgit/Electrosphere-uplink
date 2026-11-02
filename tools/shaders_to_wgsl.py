@@ -93,6 +93,8 @@ def main():
             continue
         with open(os.path.join(SRC, fn)) as f:
             glsl = rewrite(inline_includes(f.read()))
+        # the WebGPU renderer has the co-op second video memory bank (hw_prim.frag)
+        glsl = re.sub(r'^(#version[^\n]*\n)', r'\1#define AC3_BANK\n', glsl, count=1, flags=re.M)
         g = os.path.join(out_dir, fn)
         with open(g, 'w') as f:
             f.write(glsl)

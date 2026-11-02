@@ -5,6 +5,15 @@ layout(set = 0, binding = 1) uniform sampler2D zsnap;
 
 layout(set = 0, binding = 2) uniform sampler2D order_snap;
 
+#ifdef AC3_BANK
+// The second video memory bank (co-op: the guest's plane's textures; see
+// runtime/hle/gpu_sw.c): raw 16-bit texels, 1024x512, never scaled. A
+// polygon reads its texture page from it when bit 11 of its texture page is
+// set, its colour table when bit 15 of its colour table is set. Only the
+// WebGPU build has it (tools/shaders_to_wgsl.py defines AC3_BANK).
+layout(set = 0, binding = 3) uniform usampler2D bank;
+#endif
+
 layout(push_constant) uniform Push {
     vec2 inv_size;
     int  scale;
@@ -33,6 +42,14 @@ uint vram16(int x, int y) {
     uvec4 c = uvec4(texelFetch(vram, p, 0) * 255.0 + 0.5);
     return (c.r >> 3) | ((c.g >> 3) << 5) | ((c.b >> 3) << 10) |
            (c.a > 127u ? 0x8000u : 0u);
+}
+
+// a texel from the game's video memory, or from the second bank
+uint tex16(int x, int y, bool from_bank) {
+#ifdef AC3_BANK
+    if (from_bank) return texelFetch(bank, ivec2(x & 1023, y & 511), 0).r;
+#endif
+    return vram16(x, y);
 }
 
 void main() {
@@ -72,6 +89,7 @@ void main() {
         uint clut = v_info.y;
         int clut_x = int(clut & 63u) * 16;
         int clut_y = int((clut >> 6) & 511u);
+        bool page_bank = (tp & 0x800u) != 0u, clut_bank = (clut & 0x8000u) != 0u;
 
         uint tw = v_info.z;
         int fu = int(floor(v_uv.x)), fv = int(floor(v_uv.y));
@@ -86,13 +104,13 @@ void main() {
 
         uint t;
         if (depth == 0u) {
-            uint w = vram16(page_x + int(u >> 2), page_y + int(v));
-            t = vram16(clut_x + int((w >> ((u & 3u) * 4u)) & 15u), clut_y);
+            uint w = tex16(page_x + int(u >> 2), page_y + int(v), page_bank);
+            t = tex16(clut_x + int((w >> ((u & 3u) * 4u)) & 15u), clut_y, clut_bank);
         } else if (depth == 1u) {
-            uint w = vram16(page_x + int(u >> 1), page_y + int(v));
-            t = vram16(clut_x + int((w >> ((u & 1u) * 8u)) & 255u), clut_y);
+            uint w = tex16(page_x + int(u >> 1), page_y + int(v), page_bank);
+            t = tex16(clut_x + int((w >> ((u & 1u) * 8u)) & 255u), clut_y, clut_bank);
         } else {
-            t = vram16(page_x + int(u), page_y + int(v));
+            t = tex16(page_x + int(u), page_y + int(v), page_bank);
         }
         if (t == 0u) discard;
         mbit = (t & 0x8000u) != 0u;

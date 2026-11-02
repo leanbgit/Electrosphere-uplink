@@ -37,7 +37,6 @@
 #define PLANE_PAGE        0x1Bu         /* a face's texture page: (704, 256) */
 #define PLANE_CLUT_X      21u           /* its colour tables: x 336 / 16, */
 #define PLANE_CLUT_Y0     312u          /*   rows 312..319 */
-#define FACE_SIZE         0x24u
 #define FACE_CLUT         0x0Eu         /* in a face: uv0 + colour table (+0x0C), uv1 + texture page (+0x10) */
 #define FACE_PAGE         0x12u
 #define FN_PLAYER_DRAW    0x80067494u   /* (draw state, list, ..., player record, [other record]) */
@@ -137,7 +136,7 @@ void coop_plane_guest_created(ctx_t *ctx) {
             MEM_W16(a, clut | 0x8000u);
             MEM_W16(a + (FACE_PAGE - FACE_CLUT), page | 0x800u);
             faces++;
-            a += FACE_SIZE - 2;
+            a += FACE_PAGE - FACE_CLUT - 2;   /* on past its texture page (faces are 0x18 or more apart, so no jump further) */
         }
     }
     M.parts = parts;
@@ -192,6 +191,25 @@ static int load_image(ctx_t *ctx) {
     }
     ctx->r[2] = 0;
     return 1;
+}
+
+/* The guest's view: the HUD's small plane picture (a sprite with the plane
+ * file's HUD colour table) comes from the second bank too. Only the guest's
+ * picture changes (this is the view replay's memory, thrown away after). */
+#define HUD_PLANE_CLUT ((432u / 16u) | (509u << 6))
+void coop_plane_patch_view(u32 ot_base, u32 entries) {
+    if (!M.ready || !entries) return;
+    u32 a = ot_base + (entries - 1u) * 4u, steps = 0;
+    while (steps++ < 400000u && (a >> 24) == 0x80u) {
+        u32 word = MEM_R32(a), len = word >> 24;
+        if (len >= 3) {
+            u32 code = MEM_R32(a + 4) >> 24;
+            if ((code & 0xE4u) == 0x64u && (MEM_R32(a + 12) >> 16) == HUD_PLANE_CLUT)   /* textured sprites */
+                MEM_W32(a + 12, MEM_R32(a + 12) | 0x80000000u);
+        }
+        if ((word & 0xFFFFFFu) == 0xFFFFFFu) break;
+        a = 0x80000000u | (word & 0xFFFFFFu);
+    }
 }
 
 int coop_plane_hook(ctx_t *ctx, u32 target) {

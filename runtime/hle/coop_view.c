@@ -233,8 +233,9 @@ static void view_replay(ctx_t *ctx) {
         u32 glo = 0, ghi = 0;
         same = draw_buffer(&glo, &ghi) && glo == lo && ghi == hi;
         if (same) {
-            memcpy(G.keep_buf, ac3_ram + (lo & AC3_RAM_MASK), hi - lo);
             u32 w2 = MEM_R32(WORLD_PTR), ot0 = MEM_R32(w2 + WORLD_OT0), pk0 = MEM_R32(w2 + WORLD_PACKETS0);
+            coop_plane_patch_view(lo, (pk0 - ot0) / 4u);
+            memcpy(G.keep_buf, ac3_ram + (lo & AC3_RAM_MASK), hi - lo);
             collect_packets(lo, hi, lo, (pk0 - ot0) / 4u);   /* both buffers have the same OT size */
         }
     }

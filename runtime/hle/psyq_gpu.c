@@ -154,6 +154,9 @@ static void decode_poly(u32 addr, u8 code) {
 
 static void draw_rect(gpu_rect_t *r) {
     r->tpage = gpu_sw.texpage;
+    /* co-op's second video memory bank (gpu_sw.c): a sprite has no texture
+     * page of its own, so its colour table's bank bit picks the bank for both */
+    if (r->textured && (r->clut & 0x8000u) && ac3_vram_bank) r->tpage |= 0x800u;
     gpu_sw_texwin(&r->twin_mask, &r->twin_off);
     if (r->textured && ((r->tpage >> 7) & 3) < 2) check_clut(r->clut);
     gpu_sw_rect(r);

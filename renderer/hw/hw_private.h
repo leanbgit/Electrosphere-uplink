@@ -50,9 +50,9 @@ typedef struct {
     /* GPU objects (renderer/webgpu/hw_webgpu.c) */
     WGPUDevice dev;
     WGPUQueue queue;
-    WGPUTexture target, read, zimg, zsnap, order, order_snap, upimg, vram16;
+    WGPUTexture target, read, zimg, zsnap, order, order_snap, upimg, vram16, bank;
     WGPUTextureView target_view, read_view, z_view, zsnap_view, order_view,
-                    order_snap_view, up_view, vram16_view;
+                    order_snap_view, up_view, vram16_view, bank_view;   /* bank: co-op's second VRAM bank */
     WGPUSampler nearest, linear;
     WGPUBindGroupLayout tex_layout, smp_layout, push_layout;
     WGPUBindGroup set_read, smp_nearest, disp_tex, disp_smp, push_group;

@@ -146,6 +146,7 @@ void coop_flash_swap(void);                     /* the guest's weapon-fire flash
 int  coop_plane_hook(ctx_t *ctx, u32 target);    /* the guest's plane model: loading, drawing */
 void coop_plane_guest_created(ctx_t *ctx);
 u32  coop_plane_object_in(void);
+void coop_plane_patch_view(u32 ot_base, u32 entries);   /* the guest's picture: its HUD plane picture */
 void coop_plane_object_out(u32 old);
 /* coop_hangar.c */
 int  coop_hangar_hook(ctx_t *ctx, u32 target);   /* the guest's turn in the hangar */

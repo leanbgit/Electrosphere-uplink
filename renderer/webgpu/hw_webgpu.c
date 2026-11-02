@@ -193,28 +193,35 @@ static int init_pipelines(void) {
     WGPUShaderModule pvs = module(wgsl_hw_prim_vert), pfs = module(wgsl_hw_prim_frag);
     WGPUShaderModule fvs = module(wgsl_fullscreen_vs), ffs = module(wgsl_fill_fs), bfs = module(wgsl_blit_fs);
 
-    /* ---- primitives: group 0 textures, group 1 push (dynamic), group 2 samplers */
-    WGPUBindGroupLayoutEntry te[3] = {
+    /* ---- primitives: group 0 textures, group 1 push (dynamic), group 2 samplers.
+     * Binding 3: co-op's second video memory bank (runtime/hle/gpu_sw.c), raw
+     * 16-bit texels, filled by hw_bank_upload_webgpu. */
+    H.bank = texture(WGPUTextureFormat_R16Uint, VRAM_W, VRAM_H,
+                     WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst, &H.bank_view);
+    WGPUBindGroupLayoutEntry te[4] = {
         tex_entry(0, WGPUTextureSampleType_Float),
         tex_entry(1, WGPUTextureSampleType_UnfilterableFloat),
         tex_entry(2, WGPUTextureSampleType_UnfilterableFloat),
+        tex_entry(3, WGPUTextureSampleType_Uint),
     };
-    WGPUBindGroupLayoutEntry se[3] = {
+    WGPUBindGroupLayoutEntry se[4] = {
         smp_entry(0, WGPUSamplerBindingType_NonFiltering),
         smp_entry(1, WGPUSamplerBindingType_NonFiltering),
         smp_entry(2, WGPUSamplerBindingType_NonFiltering),
+        smp_entry(3, WGPUSamplerBindingType_NonFiltering),
     };
     WGPUBindGroupLayoutEntry pe = ubo_entry(0, WGPUShaderStage_Vertex | WGPUShaderStage_Fragment, 1, sizeof(prim_push_t));
-    H.tex_layout = bgl(te, 3);
-    H.smp_layout = bgl(se, 3);
+    H.tex_layout = bgl(te, 4);
+    H.smp_layout = bgl(se, 4);
     H.push_layout = bgl(&pe, 1);
     WGPUBindGroupLayout gl[3] = { H.tex_layout, H.push_layout, H.smp_layout };
     H.layout = playout(gl, 3);
 
-    WGPUBindGroupEntry tb[3] = { tex_bind(0, H.read_view), tex_bind(1, H.zsnap_view), tex_bind(2, H.order_snap_view) };
-    WGPUBindGroupEntry sb[3] = { smp_bind(0, H.nearest), smp_bind(1, H.nearest), smp_bind(2, H.nearest) };
-    H.set_read = group(H.tex_layout, tb, 3);
-    H.smp_nearest = group(H.smp_layout, sb, 3);
+    WGPUBindGroupEntry tb[4] = { tex_bind(0, H.read_view), tex_bind(1, H.zsnap_view), tex_bind(2, H.order_snap_view),
+                                 tex_bind(3, H.bank_view) };
+    WGPUBindGroupEntry sb[4] = { smp_bind(0, H.nearest), smp_bind(1, H.nearest), smp_bind(2, H.nearest), smp_bind(3, H.nearest) };
+    H.set_read = group(H.tex_layout, tb, 4);
+    H.smp_nearest = group(H.smp_layout, sb, 4);
     H.push_buf = buffer(3 * 256, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     WGPUBindGroupEntry pb = buf_bind(0, H.push_buf, sizeof(prim_push_t));
     H.push_group = group(H.push_layout, &pb, 1);
@@ -388,7 +395,7 @@ int hw_init_webgpu(WGPUDevice dev, const hw_config_t *cfg) {
 void hw_shutdown(void) {
     if (!H.ready) return;
     hw_fx_shutdown();
-    WGPUTexture t[] = { H.target, H.read, H.zimg, H.zsnap, H.order, H.order_snap, H.upimg, H.vram16 };
+    WGPUTexture t[] = { H.target, H.read, H.zimg, H.zsnap, H.order, H.order_snap, H.upimg, H.vram16, H.bank };
     for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) if (t[i]) wgpuTextureDestroy(t[i]);
     WGPUBuffer b[] = { H.push_buf, H.fill_buf, H.disp_buf, H.vbuf, H.sbuf, psx_buf, blit_buf };
     for (unsigned i = 0; i < sizeof b / sizeof b[0]; i++) if (b[i]) wgpuBufferDestroy(b[i]);
@@ -687,6 +694,18 @@ typedef struct {
     float view_pos[2], view_size[2];
     u32 rgb24, pad;
 } psx_push_t;
+
+/* co-op: the second video memory bank (the guest's plane's textures), as
+ * the game worker's software renderer has it; sent when it changes */
+void hw_bank_upload_webgpu(const u16 *bank) {
+    if (!H.ready || !bank || !H.bank) return;
+    WGPUImageCopyTexture dst = { 0 };
+    dst.texture = H.bank; dst.aspect = WGPUTextureAspect_All;
+    WGPUTextureDataLayout lay = { 0 };
+    lay.bytesPerRow = VRAM_W * 2; lay.rowsPerImage = VRAM_H;
+    WGPUExtent3D e = { VRAM_W, VRAM_H, 1 };
+    wgpuQueueWriteTexture(H.queue, &dst, bank, VRAM_W * VRAM_H * 2, &lay, &e);
+}
 
 /* the original picture straight from VRAM: used for 24-bit movies */
 void hw_display_vram_webgpu(WGPURenderPassEncoder rp, const gpu_display_t *d, const u16 *vram,

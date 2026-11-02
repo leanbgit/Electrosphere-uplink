@@ -21,6 +21,7 @@ void gpu_sw_gp0_state(u32 word);
 
 void gpu_sw_texpage_attr(u16 attr);
 extern u16 *ac3_vram_bank;   /* the second video memory bank (co-op: the guest's plane), or NULL */
+extern u32 ac3_vram_bank_version;
 void gpu_sw_bank_load(s32 x, s32 y, s32 w, s32 h, const u8 *src);
 
 void gpu_sw_texwin(u16 *mask, u16 *off);

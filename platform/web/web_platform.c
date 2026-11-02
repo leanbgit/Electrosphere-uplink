@@ -204,6 +204,7 @@ static void hd_frame(void) {
         PSX_RECT all = { 0, 0, 1024, 512 };
         hw_upload(&all, ac3_vram);
         hw_fx_resend_map();
+        hw_packet_resend_bank();
     }
     u8 *p = NULL;
     size_t n = hw_packet_build(&p, ++seq, flags, &d, ac3_vram);

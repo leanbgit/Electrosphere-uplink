@@ -10,6 +10,8 @@
  *   u8        [nstaging]      (VRAM uploads, RGBA8 rows)
  *   u8        [fx_bytes]      (world effects: hw_fx_web.h)
  *   u16       [1024*512]      (raw VRAM, only when PKT_VRAM: movies / original picture)
+ *   u16       [1024*512]      (the second video memory bank, only when PKT_BANK: co-op,
+ *                              the guest's plane's textures; sent when it changes)
  * Every part starts on a 4-byte boundary.
  */
 #ifndef AC3_HW_PACKET_H
@@ -20,6 +22,7 @@
 #define PKT_HD    1u            /* draw the HD picture (else the original from VRAM) */
 #define PKT_WIDE  2u            /* 16:9 display area */
 #define PKT_VRAM  4u            /* raw VRAM included */
+#define PKT_BANK  8u            /* the second video memory bank included */
 
 typedef struct {
     u32 magic, seq, ncmds, nverts, nstaging, flags;
@@ -32,5 +35,9 @@ typedef struct {
 /* game side (renderer/webgpu/hw_packet.c) */
 int    hw_init_cpu(const hw_config_t *cfg);
 size_t hw_packet_build(u8 **out, u32 seq, u32 flags, const gpu_display_t *d, const u16 *vram);
+void   hw_packet_resend_bank(void);   /* send the second bank again with the next packet */
+
+/* render side (renderer/webgpu/hw_webgpu.c) */
+void   hw_bank_upload_webgpu(const u16 *bank);
 
 #endif
