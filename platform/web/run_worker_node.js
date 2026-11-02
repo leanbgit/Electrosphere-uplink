@@ -74,6 +74,20 @@ const pad = new Int32Array(new SharedArrayBuffer(28));
 const pad2 = new Int32Array(new SharedArrayBuffer(28));
 pad2.set([1, 1, 0, 128, 128, 128, 128]);
 const coopRec = opt('--coop', null) ? fs.readFileSync(opt('--coop', null)) : null;
+// --net-role host|guest --net-port P [--net-delay D] [--net-test REC]: online co-op
+// (web/netplay.js) between two runs over a local TCP connection; --net-test
+// takes this player's controller from a recording (host: port 1, guest: port 2)
+const netRole = opt('--net-role', null);
+let netIO = null, netInbound = null, netDesync = null, netWaits = 0;
+if (netRole) {
+  const { NetRing } = require(path.join(dist, 'netplay.js'));
+  netInbound = NetRing.create();
+  const { Worker } = require('worker_threads');
+  netIO = new Worker(path.join(__dirname, 'net_io_node.js'), { workerData: {
+    role: netRole, port: +opt('--net-port', 4001), inbound: netInbound, netplay: path.join(dist, 'netplay.js') } });
+  netIO.on('message', m => { if (m.type === 'connected') console.log('[net] connected'); });
+  netIO.unref();
+}
 let frames2 = 0, own2 = 0;
 const ringFrames = 44100, ring = new SharedArrayBuffer(8 + ringFrames * 4), ringHead = new Int32Array(ring, 0, 2);
 Atomics.store(ctrl, 1, 1);                     // "audio running": exercise the audio path too
@@ -92,6 +106,9 @@ globalThis.postMessage = (m) => {
       break;
     }
     case 'exit': console.log(`[page] program exited (${m.code})`); break;
+    case 'net-out': netIO.postMessage(m.data, [m.data]); break;
+    case 'net-desync': netDesync = m.field; console.log(`[net] DESYNC at field ${m.field}`); break;
+    case 'net-wait': if (m.seconds) netWaits++; break;
     case 'recording':                                   // --record-input (coop.html's "Record this session")
       for (const f of m.files) { fs.writeFileSync(f.name, Buffer.from(f.data)); console.log(`[page] recording ${f.name} (${f.data.byteLength} bytes)`); }
       break;
@@ -139,7 +156,10 @@ globalThis.postMessage = (m) => {
         fs.writeFileSync(`shot_${String(fields).padStart(6, '0')}.ppm`, Buffer.concat([Buffer.from(`P6\n${m.w} ${m.h}\n255\n`), rgb]));
       }
       if (Date.now() - lastBeat > 5000) { console.error(`[bench] field ${fields}, ${(fields / ((Date.now() - t0) / 1000)).toFixed(0)} fields/s`); lastBeat = Date.now(); }
-      if (fields >= maxFields) Atomics.store(ctrl, 0, 1);   // ask the game to quit, like the Stop button
+      if (fields >= maxFields) {                          // ask the game to quit, like the Stop button
+        Atomics.store(ctrl, 0, 1);
+        if (netIO) netIO.postMessage(new Int32Array([3, 0, 0, 0]).buffer);   // NET_BYE: the other run stops waiting
+      }
       break;
     }
   }
@@ -148,7 +168,8 @@ self.addEventListener = (type, fn) => { if (type === 'unhandledrejection') proce
 process.on('uncaughtException', e => { console.log('[bench] UNCAUGHT: ' + (e && e.stack || e)); process.exitCode = 4; });
 process.on('exit', () => { for (const [n, [r, b]] of Object.entries(readStats)) console.error(`[bench] reads ${String(r).padStart(8)}  ${(b / 1048576).toFixed(1).padStart(8)} MB  ${n}`); });
 process.on('exit', c => console.error(`[bench] end: ${fields} fields in ${((Date.now() - t0) / 1000).toFixed(1)} s, ${cardWrites} card writes, exit code ${c}` +
-  (coopRec ? `, ${frames2} guest pictures (${own2} the guest's own view)` : '')));
+  (coopRec ? `, ${frames2} guest pictures (${own2} the guest's own view)` : '') +
+  (netRole ? `, net ${netRole}: ${netDesync === null ? 'no desync' : 'DESYNC at ' + netDesync}, ${netWaits} wait reports` : '')));
 
 // --play-input REC: replay a controller recording made by the native build
 // (ac3.exe --record-input REC), starting from the card snapshots saved with it.
@@ -178,6 +199,8 @@ self.onmessage({ data: {
               if (ga) pi.extraArgs = (pi.extraArgs || []).concat(ga.split(' '));
               if (coopRec) pi.extraArgs = (pi.extraArgs || []).concat(['--coop-guest', '--coop-split']);
               return pi; })(),
+  net: netRole ? { role: netRole, delay: +opt('--net-delay', 4), inbound: netInbound,
+                   test: opt('--net-test', null) ? fs.readFileSync(opt('--net-test', null)).buffer : undefined } : undefined,
   hd: a.includes('--hd-cpu') ? { scale: 1, wide: !a.includes('--no-wide'), port: new MessageChannel().port1,
         done: new SharedArrayBuffer(4), skip: 1e9 } : null,
 } });

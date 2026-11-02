@@ -321,6 +321,7 @@ function gfxEnable() {
   document.body.classList.toggle('sd', sd);
 }
 function applyLive() {
+  if (online) return;          // online co-op: both computers keep the host's settings for the session
   const b = gfxBits();
   if (hdSet) { Atomics.store(hdSet, 0, b); Atomics.add(hdSet, 1, 1); }
   if (document.body.classList.contains('hd')) {
@@ -569,15 +570,28 @@ function loaderStage(stage, disc, done, total) {
 // --------------------------------------------------------------- run / stop
 $('volume').oninput = () => audioNode && audioNode.port.postMessage({ volume: $('volume').value / 100 });
 
-$('start').onclick = async () => {
-  if (!self.crossOriginIsolated) { $('status').textContent = 'This page cannot run the game: it is not cross-origin isolated. See Diagnostics.'; return; }
+$('start').onclick = () => startGame(null);
+
+// online: null for a normal game. For online co-op (web/online.js):
+//   { net: {role, delay, inbound}, card: Uint8Array | null (the host's card; the guest's
+//     game never saves to this browser), gfx: {scale, bits} (the host's settings),
+//     onMessage(m) for the worker's 'net-*' messages, onStop() }
+let online = null;
+async function startGame(onlineSession) {
+  if (!self.crossOriginIsolated) { $('status').textContent = 'This page cannot run the game: it is not cross-origin isolated. See Diagnostics.'; return false; }
+  online = onlineSession;
   running = true; renderFiles(); $('stop').disabled = false;
   document.body.classList.add('live');
   loaderStage('prep');
   $('status').textContent = 'Starting…';
 
   ctrl = new Int32Array(new SharedArrayBuffer(16));     // [0] quit [1] audio running [2] sleep cell
-  const hd = await startRenderer();                       // null: original picture
+  const hd = await startRenderer(online && online.gfx);   // null: original picture
+  // online co-op: widescreen and atmosphere change the game itself, so both computers need the host's
+  if (online && online.gfx && online.gfx.scale > 0 && (online.gfx.bits & (1 | 64)) && !hd) {
+    log('Online co-op: the host plays with Enhanced graphics and widescreen or atmosphere, which this browser cannot do here.', 'bad');
+    stop(); return false;
+  }
   const padSab = new SharedArrayBuffer(7 * 4); padView = new Int32Array(padSab);
   const ringFrames = 44100;                                // 1 s of headroom
   const ring = new SharedArrayBuffer(8 + ringFrames * 4);
@@ -607,7 +621,7 @@ $('start').onclick = async () => {
     if (c) { caches.push({ disc: n, file: new Blob([c.data]) }); log(`using English data for disc ${n} stored in this browser`); }
     else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); if (have.disc[n]) buildingEnglish.push(n); }
   }
-  const stored = await cardGet(0);
+  const stored = online && online.card !== undefined ? (online.card ? { data: online.card } : null) : await cardGet(0);
   const cards = stored ? [{ slot: 0, data: stored.data.buffer.slice(0) }] : [];
 
   worker = new Worker('worker.js');
@@ -618,20 +632,26 @@ $('start').onclick = async () => {
     else if (m.type === 'progress') loaderStage(m.stage, m.disc, m.done, m.total);
     else if (m.type === 'hd-off') hdOff(m.text);
     else if (m.type === 'error') { log(m.text, 'bad'); $('status').textContent = m.text.split('\n')[0]; stop(); }
-    else if (m.type === 'card') { if (m.slot === 0) { await cardPut(0, new Uint8Array(m.data)); showSaveInfo(); log('memory card 1 saved to browser storage', 'ok'); } }
+    else if (m.type === 'card') {
+      if (online && online.net.role === 'guest') return;    // the host's card: saved on the host's computer only
+      if (m.slot === 0) { await cardPut(0, new Uint8Array(m.data)); showSaveInfo(); log('memory card 1 saved to browser storage', 'ok'); }
+    }
+    else if (m.type.startsWith('net-') || m.type === 'coop-phase') { if (online) online.onMessage(m); }
     else if (m.type === 'encache') { await idbPut('encache', m.disc, { data: new Uint8Array(m.data), time: Date.now() }); log(`English data for disc ${m.disc} saved in this browser (${(m.data.byteLength / 1048576).toFixed(1)} MB); later starts skip the build.`, 'ok'); }
     else if (m.type === 'exit') { log(`program exited (${m.code})`); $('status').textContent = 'Stopped.'; stop(); }
   };
   worker.onerror = e => { log('worker error: ' + e.message, 'bad'); stop(); };
   worker.postMessage({ type: 'start', ctrl: ctrl.buffer, pad: padSab, ring,
-    discs, patches, caches, english, cards, hd }, hd ? [hd.port] : []);
+    discs, patches, caches, english, cards, hd, net: online ? online.net : undefined }, hd ? [hd.port] : []);
   $('status').textContent = 'Running. Click the screen area, then use the keyboard or a controller.';
-};
+  return true;
+}
 
 // Enhanced graphics: start the render worker before the game, so that a
 // missing or failing WebGPU falls back to the original picture up front.
-async function startRenderer() {
-  const want = self.navigator.gpu ? +$('gfx').value : 0, wide = want > 0 && !!(gfxBits() & 1);
+async function startRenderer(override) {     // override: {scale, bits} (online co-op: the host's)
+  const bits = override ? override.bits : gfxBits();
+  const want = self.navigator.gpu ? (override ? override.scale : +$('gfx').value) : 0, wide = want > 0 && !!(bits & 1);
   $('gfxhint').textContent = '';
   if (!want) { hdOff(null); return null; }
   // a canvas can be handed to a worker only once: use a fresh one every time
@@ -664,7 +684,7 @@ async function startRenderer() {
   $('ro-gfx').dataset.scale = result.scale;
   $('ro-gfx').textContent = `enhanced ${result.scale}×${wide ? ', 16:9' : ''}`;
   hdSet = new Int32Array(new SharedArrayBuffer(8));
-  hdSet[0] = gfxBits(); hdSet[1] = 1;
+  hdSet[0] = bits; hdSet[1] = 1;
   if (result.scale !== want) log(`enhanced graphics: ${want}× is too large for this GPU, using ${result.scale}×`);
   return { scale: result.scale, wide, settings: hdSet.buffer, port: chan.port1, done, skip: DEV && self.hdSkip || 0 };
 }
@@ -677,6 +697,7 @@ function hdOff(text) {
 }
 
 function stop() {
+  if (online) { const o = online; online = null; o.onStop(); }
   if (renderWorker) { const r = renderWorker; renderWorker = null; setTimeout(() => r.terminate(), 1600); }
   if (worker) {
     Atomics.store(ctrl, 0, 1);                             // ask the game to quit cleanly…

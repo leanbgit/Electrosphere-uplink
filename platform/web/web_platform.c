@@ -26,6 +26,7 @@
 #include "ac3_english.h"
 #include "ac3_capture.h"
 #include "coop.h"
+#include "coop_sync.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,6 +55,11 @@ EM_JS(void, web_post_frame2, (const u8 *rgba, int w, int h, int seq, int own), {
     if (AC3W.postFrame2) AC3W.postFrame2(HEAPU8.subarray(rgba, rgba + w * h * 4), w, h, seq, own);
 });
 EM_JS(void, web_sleep_ms, (double ms), { AC3W.sleep(ms); });
+/* online co-op (web/netplay.js): the game's fingerprint, every so many fields */
+EM_JS(int, web_net_sync_due, (void), { return AC3W.netSyncDue && AC3W.netSyncDue() ? 1 : 0; });
+EM_JS(void, web_net_sync, (u32 lo, u32 hi), { AC3W.netSync(lo, hi); });
+/* co-op: who has the controls (coop.h, AC3_COOP_PHASE_*), when it changes */
+EM_JS(void, web_coop_phase, (int phase), { if (AC3W.coopPhase) AC3W.coopPhase(phase); });
 EM_JS(int, web_audio_queued, (void), { return AC3W.audioQueued(); });
 EM_JS(int, web_audio_ok, (void), { return AC3W.audioOk() ? 1 : 0; });
 EM_JS(void, web_audio_push, (const s16 *frames, int nframes), {
@@ -273,7 +279,16 @@ static void web_frame_begin(void) { }
 
 static void web_frame_end(void) {
     if (web_quit_requested()) quit = 1;
-    web_input_poll();
+    if (web_net_sync_due()) {                 /* online co-op: the two games still the same? */
+        u64 h = ac3_coop_sync_sim();
+        web_net_sync((u32)h, (u32)(h >> 32));
+    }
+    web_input_poll();                         /* online co-op: waits for the other player's controller */
+    if (ac3_coop_guest) {
+        static int shown = -2;
+        int p = ac3_coop_phase();
+        if (p != shown) { shown = p; web_coop_phase(p); }
+    }
 
 #ifdef AC3_HW_WEBGPU
     if (hd) { hd_frame(); pace_field(); return; }

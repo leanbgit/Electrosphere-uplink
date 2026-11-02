@@ -1,0 +1,21 @@
+# The website and its room server, as one Cloudflare Worker (server/README.md).
+#   npx wrangler dev       local test (http://localhost:8787)
+#   npx wrangler deploy    publish (needs your Cloudflare account: npx wrangler login)
+name = "electrosphere-uplink"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# the website's files: platform/web/build.sh makes site/
+[assets]
+directory = "../site"
+binding = "ASSETS"
+not_found_handling = "404-page"
+
+# the rooms: one Durable Object (SQLite-backed, available on the free plan)
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Lobby"]

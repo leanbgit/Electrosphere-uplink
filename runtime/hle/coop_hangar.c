@@ -19,6 +19,9 @@
  *   guest confirms  the commit runs; the scene's choice is the guest's, which
  *                   is kept, and the host's is put back; the hangar goes on
  *                   to the mission as usual.
+ *                   The plane list's on-screen panels (plane picture, data,
+ *                   PREV/NEXT) are saved when the host confirms its plane and
+ *                   put back for the guest's turn (leaving hid them).
  *   guest cancels   in its weapon select: back to its plane list; in its
  *                   plane list: back to the host's plane list (the host
  *                   confirms again, then it is the guest's turn again).
@@ -42,13 +45,27 @@
 #define HANGAR_STATE      0x00u         /* halfword */
 #define HANGAR_LEAVING    0x02u         /* halfword, in state 5: 1 confirmed, 2 cancelled */
 #define HANGAR_ENTER      0u
+#define HANGAR_LIST       0x10u        /* +0x10 word: plane-list flags (bit 0: its data is shown), +0x14, +0x16 */
+#define HANGAR_LIST_LEN   8u
+/* the menus' on-screen panels (0x800DEE08 shows / hides one): -> a block of
+ * per-panel arrays, 16 panels: +0x50, +0x54, +0x58 halfwords, +0x5C bytes */
+#define PANELS_PTR        0x80112DC0u
+static const struct { u32 field, len; } panel_arrays[] = { { 0x50u, 0x20u }, { 0x54u, 0x20u }, { 0x58u, 0x20u }, { 0x5Cu, 0x40u } };
+#define N_PANEL_ARRAYS    4
 #define HANGAR_CONFIRMED  1
+#define HANGAR_CANCELLED  2
+#define HANGAR_LEAVE_STATE 5          /* leaving the weapon select (FN_HANGAR_LEAVE) */
 
 extern int ac3_pad_swap;                /* psyq_pad.c: 1 = controller 2 is read as controller 1 */
 
 static struct {
     int guest_turn;                     /* the guest is choosing */
     int skip_exit;                      /* the host just committed: don't leave the hangar */
+    int to_guest;                       /* on the game's way back to the plane list for the guest */
+    int plane_confirmed;                /* plane_leave has seen this confirmation */
+    int panels_saved;                   /* the plane list's panels, as the host confirmed its plane */
+    u8  panels[N_PANEL_ARRAYS][0x40];
+    u8  list_state[HANGAR_LIST_LEN];    /* the hangar's plane-list flags at that moment */
     u8  host_plane[2], host_weapons[SCENE_WEAPONS_LEN];
 } H;
 
@@ -85,21 +102,44 @@ static int commit(ctx_t *ctx) {
     return 1;
 }
 
+/* the panels on screen and the plane list's flags: saved (1) when the host
+ * confirms its plane, put back (0) */
+static void panels(int save) {
+    u32 ui = MEM_R32(PANELS_PTR), h = hangar();
+    if (!ram_ptr(ui) || !h || (!save && !H.panels_saved)) return;
+    if (save) copy_out(h + HANGAR_LIST, H.list_state, HANGAR_LIST_LEN); else copy_in(h + HANGAR_LIST, H.list_state, HANGAR_LIST_LEN);
+    for (unsigned i = 0; i < N_PANEL_ARRAYS; i++) {
+        u32 a = MEM_R32(ui + panel_arrays[i].field);
+        if (!ram_ptr(a)) return;
+        if (save) copy_out(a, H.panels[i], panel_arrays[i].len); else copy_in(a, H.panels[i], panel_arrays[i].len);
+    }
+    H.panels_saved = save;
+}
+
 static int leave(ctx_t *ctx) {
+    H.plane_confirmed = 0;
     u32 h = hangar();
     if (!h) return 0;
-    if (H.guest_turn && MEM_R16S(h + HANGAR_LEAVING) != HANGAR_CONFIRMED) {
-        MEM_W16(h + HANGAR_STATE, HANGAR_ENTER);           /* the guest cancelled: its plane list again */
-        MEM_W16(h + HANGAR_LEAVING, 0);
+    if (H.to_guest) {                       /* the game's way back to the plane list, for the guest's turn */
+        ac3_interpret(ctx, FN_HANGAR_LEAVE);
+        if (MEM_R16S(h + HANGAR_STATE) != HANGAR_LEAVE_STATE) H.to_guest = 0;
         return 1;
     }
+    /* cancelled (back to the plane list): the game's own way, for either player */
+    if (MEM_R16S(h + HANGAR_LEAVING) != HANGAR_CONFIRMED) return 0;
     u32 menu = MEM_R32(MENU_PTR), request = ram_ptr(menu) ? MEM_R32(menu + MENU_REQUEST) : 0;
     ac3_interpret(ctx, FN_HANGAR_LEAVE);
     if (H.skip_exit) {                                      /* the host committed: the guest's turn */
         H.skip_exit = 0;
         if (ram_ptr(menu)) MEM_W32(menu + MENU_REQUEST, request);   /* no next screen yet */
-        MEM_W16(h + HANGAR_STATE, HANGAR_ENTER);
-        MEM_W16(h + HANGAR_LEAVING, 0);
+        /* The plane list again, for the guest. The confirmation's closing
+         * animation hid its panels: the ones on the left (the plane's
+         * picture, its data) come back from how they were when the host
+         * confirmed its plane; the rest, and the plane's data, the way the
+         * game itself goes back when the weapon select is cancelled. */
+        panels(0);
+        MEM_W16(h + HANGAR_LEAVING, HANGAR_CANCELLED);
+        H.to_guest = 1;
         H.guest_turn = 1;
         ac3_pad_swap = 1;
     }
@@ -111,7 +151,13 @@ static int leave(ctx_t *ctx) {
  * guest gets another turn). */
 static int plane_leave(void) {
     u32 h = hangar();
-    if (!h || !H.guest_turn || MEM_R16S(h + HANGAR_LEAVING) == HANGAR_CONFIRMED) return 0;
+    if (!h) return 0;
+    if (!H.guest_turn && MEM_R16S(h + HANGAR_LEAVING) == HANGAR_CONFIRMED) {
+        if (!H.plane_confirmed) panels(1);              /* the host's plane chosen: the list as it looks now */
+        H.plane_confirmed = 1;
+        return 0;
+    }
+    if (!H.guest_turn || MEM_R16S(h + HANGAR_LEAVING) == HANGAR_CONFIRMED) return 0;
     copy_in(SCENE + SCENE_PLANE, H.host_plane, 2);
     copy_in(SCENE + SCENE_WEAPONS, H.host_weapons, SCENE_WEAPONS_LEN);
     end_turn();
@@ -137,6 +183,7 @@ int coop_hangar_hook(ctx_t *ctx, u32 target) {
 void coop_hangar_flight(void) {
     if (H.guest_turn || ac3_pad_swap) { printf("coop: hangar: the guest's turn did not finish\n"); end_turn(); }
     H.skip_exit = 0;
+    H.panels_saved = H.plane_confirmed = H.to_guest = 0;
 }
 
 int ac3_coop_hangar_turn(void) { return H.guest_turn; }

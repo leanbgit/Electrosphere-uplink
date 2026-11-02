@@ -75,6 +75,16 @@ void ac3_coop_field(void) {
     G.dead = 0;
 }
 
+/* Who has the controls now (coop.h, AC3_COOP_PHASE_*), for the pages. */
+int ac3_coop_phase(void) {
+    if (!ac3_coop_guest) return AC3_COOP_PHASE_OFF;
+    if (ac3_coop_hangar_turn()) return AC3_COOP_PHASE_HANGAR;
+    if (G.live) return AC3_COOP_PHASE_FLYING;
+    int in_flight = G.last_update_field && ac3_vblank_count() - G.last_update_field <= 120u;
+    if (in_flight) return G.dead ? AC3_COOP_PHASE_DOWN : AC3_COOP_PHASE_WAITING;
+    return AC3_COOP_PHASE_HOST;
+}
+
 void ac3_coop_status(char *out, int cap) {
     snprintf(out, (size_t)cap, "guest %s handle 0x%05X created %u updates %u views %u deaths %u",
              G.live ? "live" : G.dead ? "destroyed" : "none", G.handle, G.created_field, G.updates, G.views, G.deaths);

@@ -28,6 +28,9 @@ the overview and the shared state; `coop_game.h` names the game's addresses):
 | `coop_probe.c` | research probes for the headless bench (hashes, logs, RAM images) |
 | `coop_sound.c` | what each player hears: the table of sound channels as this player should hear it, played on a second sound chip (S5_sound.md) |
 | `spu_ear*.c`, `spu_ear*.h` | the second sound chip ("the ear"): the sound-chip code compiled again under other names, so the game's own chip stays identical on both computers |
+| `web/netplay.js` | online co-op lockstep: each player's controller tagged for a later field, sent, waited for; the desync check (S6_network.md) |
+| `web/online.js` | online co-op on the main page: rooms, the direct connection, the checks, starting both games |
+| `server/` | the website and its room server, one Cloudflare Worker (server/README.md) |
 | `coop_sync.c` | fingerprints of the game's state per field (`--coop-sync-log`, every build): for comparing computers, builds and browsers, and later for spotting a desync |
 
 ## Local co-op test page (the Phase 2 checkpoint)

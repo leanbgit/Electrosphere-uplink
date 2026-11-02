@@ -10,7 +10,9 @@
 //   pad   Int32Array(7): connected, analog, buttons, lx, ly, rx, ry
 //   pad2  the same for controller 2 (co-op guest; optional)
 //   ring  audio ring: Int32 header [read, write] + Int16 stereo samples
+//   net.inbound  online co-op: the other computer's records (web/netplay.js)
 'use strict';
+importScripts('netplay.js');
 const DEV = true;    // site/ (build.sh): false (test-bench options ignored in the website)
 
 const RAW = 2352, USER_OFF = 24, USER = 2048;
@@ -18,6 +20,7 @@ const EXE_SHA256 = '2c3f2ce41268176128973ea0cd9b28784a26c0061bff5550c99599388f13
 const DISC_NAME = n => `Ace Combat 3 - Electrosphere (Japan, Asia) (Disc ${n}) (Rev 1).bin`;
 
 let ctrl, pad, pad2 = null, ringHead, ringData, ringFrames;
+let net = null;    // online co-op: NetPlay (web/netplay.js), or null
 // enhanced graphics: port to the render worker and its "fields done" counter
 let hdPort = null, hdDone = null, hdSkip = 0, hdSet = null, hdSetSeen = 0;
 const reader = new FileReaderSync();
@@ -63,8 +66,13 @@ async function sha256hex(bytes) {
 // ---- the interface ac3.wasm calls (see platform/web/web_platform.c)
 self.AC3W = {
   quitRequested: () => Atomics.load(ctrl, 0) !== 0,
-  padState: () => pad,
-  pad2State: () => pad2,                             // co-op: controller 2, or null
+  // controllers, once per field. Online co-op: both players' for this field
+  // (waits for the other computer's if it has not arrived yet)
+  padState() { if (!net) return pad; net.step(pad); return net.pad1(); },
+  pad2State: () => net ? net.pad2() : pad2,          // co-op: controller 2, or null
+  netSyncDue: () => !!net && net.syncDue(),
+  netSync(lo, hi) { net.sync(lo, hi); },
+  coopPhase: phase => postMessage({ type: 'coop-phase', phase }),   // who has the controls (runtime/hle/coop.h)
   postFrame2(view, w, h, seq, own) {                 // co-op local test: the guest's view (own = 0: the host's picture)
     const copy = new Uint8Array(view);
     postMessage({ type: 'frame2', w, h, seq, own, buf: copy.buffer }, [copy.buffer]);
@@ -210,6 +218,14 @@ self.onmessage = async (e) => {
   ctrl = new Int32Array(m.ctrl);
   pad = new Int32Array(m.pad);
   if (m.pad2) pad2 = new Int32Array(m.pad2);
+  // online co-op: the controllers go through the lockstep (web/netplay.js)
+  if (m.net) net = NetPlay({ role: m.net.role, delay: m.net.delay, inbound: m.net.inbound,
+                             test: DEV && m.net.test ? new Uint8Array(m.net.test) : null }, {
+    send: records => postMessage({ type: 'net-out', data: records.buffer }, [records.buffer]),
+    desync: field => postMessage({ type: 'net-desync', field }),
+    waiting: seconds => postMessage({ type: 'net-wait', seconds }),
+    quit: () => Atomics.load(ctrl, 0) !== 0,
+  });
   ringHead = new Int32Array(m.ring, 0, 2);
   ringData = new Int16Array(m.ring, 8);
   ringFrames = ringData.length >> 1;
@@ -264,6 +280,8 @@ self.onmessage = async (e) => {
     if (hdPort) {
       args.push('--scale', String(m.hd.scale), m.hd.wide ? '--widescreen' : '--no-widescreen');
     }
+    // online co-op: the guest's aircraft on controller 2; the guest's computer shows the guest's view
+    if (m.net) args.push('--coop-guest', ...(m.net.role === 'guest' ? ['--coop-view'] : []));
     // Development only (test bench): extra files copied into /rec and extra
     // game arguments, e.g. an input recording for --play-input. The page never
     // sends these, and the website's build ignores them.

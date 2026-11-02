@@ -118,6 +118,24 @@ byte-identical. Recordings made without a guest turn replay with
 
 The test page says whose turn it is (from the `coop: hangar:` log lines).
 
+**The guest's plane list looked empty** (user's online test, 2026-11-02):
+confirming the weapons plays a closing animation that hides the plane list's
+on-screen panels, and the guest's turn went straight back to the list. The
+panels are driven by a table (`[0x80112DC0]`: 16 panels, arrays at +0x50,
++0x54, +0x58 and +0x5C; `0x800DEE08` shows or hides one). Now:
+
+- when the host confirms its plane, that table and the list's flags
+  (hangar +0x10..+0x17; bit 0 of +0x10 shows the plane's data) are saved;
+- after the host's commit they are put back, and the hangar goes back to the
+  list the game's own way after a cancelled weapon select (leaving = 2),
+  which shows the remaining panels and redraws the data;
+- a cancel in the guest's weapon select is left entirely to the game.
+
+Checked with the campaign recording `C2H`: the guest's list looks the same
+as the host's (plane picture, data with numbers, model name, performance
+chart, PREV/NEXT). Both computers stay identical, and two web runs in
+lockstep match them.
+
 ## Step C: the guest's own plane model (done, original graphics)
 
 `coop_plane.c`, plus two engine additions.
