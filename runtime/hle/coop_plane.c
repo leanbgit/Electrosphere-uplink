@@ -14,8 +14,8 @@
  * created it is taken apart the same way, there, with the game's own
  * functions; its textures go to the second video memory bank (gpu_sw.c,
  * same places), and its model's faces are marked to read them from there
- * (texture page bit 11, colour table bit 15). Its sounds are not loaded: the
- * guest's plane sounds like the host's.
+ * (texture page bit 11, colour table bit 15). Its sounds (entry 3) go to
+ * coop_sound.c, which plays them for the guest's ears.
  *
  * Drawing: FN_PLAYER_DRAW draws both players' planes. For each it copies
  * pointers out of the player's parts table into a record: "the player"
@@ -95,6 +95,7 @@ static void map_add(u32 from, u32 to) {
  * (without the sounds; textures: step C4). */
 void coop_plane_guest_created(ctx_t *ctx) {
     M.ready = 0;
+    coop_sound_guest_bank(0);                          /* none, unless the guest's plane file is here */
     if (!M.queued) return;
     M.queued = 0;
     if (MEM_R16U(EXT_FILE) != 4u) { printf("coop: guest's plane file not read (yet)\n"); return; }
@@ -104,6 +105,7 @@ void coop_plane_guest_created(ctx_t *ctx) {
     call_guest(ctx, FN_RELOC, EXT_FILE, 0, 0, 0);
     u32 entries = ctx->r[2];
     u32 e0 = MEM_R32(entries), e1 = MEM_R32(entries + 4), e2 = MEM_R32(entries + 8), e3 = MEM_R32(entries + 12);
+    coop_sound_guest_bank(e3);                         /* its sounds: for the guest's ears (coop_sound.c) */
     M.to_bank = 1;                                     /* its pictures to the second bank */
     call_guest(ctx, FN_LOAD_TEXTURES, e2, e3, 0, 0);
     M.to_bank = 0;

@@ -26,6 +26,9 @@ the overview and the shared state; `coop_game.h` names the game's addresses):
 | `coop_hangar.c` | the guest's turn in the hangar: after the host confirms, controller 2 picks the guest's plane and weapons |
 | `coop_plane.c` | the guest's own plane model: its file loaded into the extra memory, its textures into the second video memory bank, drawn in its place |
 | `coop_probe.c` | research probes for the headless bench (hashes, logs, RAM images) |
+| `coop_sound.c` | what each player hears: the table of sound channels as this player should hear it, played on a second sound chip (S5_sound.md) |
+| `spu_ear*.c`, `spu_ear*.h` | the second sound chip ("the ear"): the sound-chip code compiled again under other names, so the game's own chip stays identical on both computers |
+| `coop_sync.c` | fingerprints of the game's state per field (`--coop-sync-log`, every build): for comparing computers, builds and browsers, and later for spotting a desync |
 
 ## Local co-op test page (the Phase 2 checkpoint)
 
@@ -43,6 +46,11 @@ data and memory card the main page remembered (the card is only read).
   session exactly.
 - The game gets `--coop-guest --coop-split` (development option, ignored on the
   website). Co-op switches are parsed in `host/main.c` in every build.
+
+- "Sync check" replays a recording (`.ac3i` with its `.mcd` files) unpaced and
+  downloads the game's state fingerprints for every field
+  (`--coop-sync-log`, `runtime/hle/coop_sync.h`), to compare browsers and
+  computers with `tools/coop/hashcmp.py` (`S1_determinism.md`).
 
 `platform/web/run_worker_node.js ... --game-args "--coop-guest --coop-split"`
 runs the same thing under Node; with `--shot-every N` it also writes the
@@ -90,6 +98,7 @@ hash log, and whatever the options ask for.
 | `--coop-p2 REC` | second controller taken from another recording's port 2 (make one with `tools/coop/make_p2.py`) |
 | `--coop-guest` | the co-op guest aircraft (`runtime/hle/coop*.c`, see S2_guest.md) |
 | `--coop-view` | with `--coop-guest`: draw the guest's view (S3_view.md); screenshots show it |
+| `--coop-ears host\|guest` | whose sound the speakers play (S5_sound.md); by default the guest's on the guest's computer (`--coop-view` alone) |
 
 Field windows: the game often runs at 30 frames per second in flight (it waits
 two fields per frame), so a one-field window can contain no game code at all.

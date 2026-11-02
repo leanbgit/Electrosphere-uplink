@@ -158,6 +158,7 @@ void coop_view_mark(ctx_t *ctx, u32 resume_pc) {
     G.snap_ctx = *ctx;
     G.snap_pc = resume_pc;
     G.view_on = 1;
+    coop_sound_mark();
 }
 
 /* After the host's last drawing call: the frame's memory is now exactly the
@@ -197,6 +198,8 @@ static void view_replay(ctx_t *ctx) {
     coop_threat_swap();       /* the guest's incoming missiles as "the player's" */
     if (G.shake_valid) copy_in(w + WORLD_SHAKE, G.shake, 8);   /* the guest's screen shake */
     coop_plane_object_in();   /* the guest's plane model (this RAM is thrown away after) */
+    coop_sound_replay_in();   /* the guest's placed sounds (other aircraft, by distance) */
+    coop_sound_bank_swap();   /* the guest's plane sounds in (out again before this RAM goes) */
     /* The camera follows "the player" through pointers into the host's entity
      * (camera object +0x34 -> its position): point them at the guest's entity. */
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++)
@@ -218,6 +221,8 @@ static void view_replay(ctx_t *ctx) {
     ac3_interpret_until(ctx, RA_AFTER_TICK, RA_DRAW_LAST);
     coop_prof_add(PROF_REPLAY_DRAW, t2);
     G.replaying = 0;
+    coop_sound_after_replay();   /* the sound channels as the guest's frame left them (this RAM) */
+    coop_sound_bank_swap();
     u64 t3 = coop_now_ns();
 
     for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) copy_out(w + coop_view_private[i].addr, G.cam[i], coop_view_private[i].len);

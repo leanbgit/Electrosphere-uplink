@@ -63,11 +63,13 @@ static void scripted_input(void) {
     ac3_pad[0].buttons = b;
 }
 
+#include "hle/coop_sync.h"
 #ifdef AC3_COOP_PROBE
 #include "hle/coop_probe.h"
 #endif
 void ac3_boot_frame_hook(void) {
     if (!boot_running) return;
+    ac3_coop_sync_field();
 #ifdef AC3_COOP_PROBE
     ac3_coop_probe_field();
 #endif
@@ -261,6 +263,7 @@ int ac3_boot(const char *exe, const char *disc, u32 frames, int trace,
     }
     boot_running = 0;
     ac3_oracle_finish();
+    ac3_coop_sync_log_close();
 #ifdef AC3_COOP_PROBE
     ac3_coop_probe_finish();
 #endif

@@ -19,6 +19,7 @@
     <div class="row">
       <label>Player 1 (host) <select id="src1"></select></label>
       <label>Player 2 (guest) <select id="src2"></select></label>
+      <label>Sound <select id="ears"><option value="host">player 1's</option><option value="guest">player 2's</option></select></label>
       <label><input type="checkbox" id="record"> Record this session (both controllers)</label>
       <button id="start" disabled>Start</button>
       <button id="stop" class="sec" disabled>Stop</button>
@@ -29,6 +30,19 @@
   <section class="views">
     <figure class="p1"><figcaption><b class="p1">Player 1 · host</b><span id="ro1" class="dim"></span></figcaption><canvas id="v1"></canvas></figure>
     <figure class="p2"><figcaption><b class="p2">Player 2 · guest</b><span id="ro2" class="dim">no plane yet: joins when player 1 gets control (around "Engage"); until then this shows player 1's view, dimmed</span></figcaption><canvas id="v2"></canvas></figure>
+  </section>
+
+  <section>
+    <h2>Sync check</h2>
+    <p class="dim">Replays a co-op recording as fast as this browser can and saves a fingerprint of the game's state for every
+      field (<code>…sync.tsv</code>), to compare between browsers and computers. Pick the recording's <code>.ac3i</code> file
+      together with its <code>.card1.mcd</code> / <code>.card2.mcd</code> files.</p>
+    <div class="row">
+      <label>Recording <input type="file" id="checkfiles" multiple accept=".ac3i,.mcd"></label>
+      <label><input type="checkbox" id="checkold"> Made before the guest's hangar turn existed</label>
+      <button id="check" disabled>Run sync check</button>
+      <span id="checkstatus" class="dim"></span>
+    </div>
   </section>
 
   <section>

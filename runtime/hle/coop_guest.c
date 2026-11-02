@@ -243,13 +243,16 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
         printf("\n");
     }
     if (!getenv("AC3_COOP_NOUPDATE")) {     /* research switch: create the guest but never update it */
+        coop_sound_bank_swap();    /* the guest's plane sounds in */
         call_guest(ctx, FN_PLAYER_UPDATE, entry->r[4], entry->r[5], entry->r[6], entry->r[7]);
+        coop_sound_bank_swap();    /* and out */
         guest_targeting(ctx);
         coop_guest_hazards(ctx, mine);
     }
     if (coop_debug && G.updates % 30u == 0) debug_dump(slots);
     *ctx = saved;             /* the host's results (v0/v1) stand */
     G.in_guest_update = 0;
+    coop_sound_after_guest();  /* the guest's engine channels, before the host's are put back */
     coop_plane_object_out(object);
     if (shake) copy_out(world + WORLD_SHAKE, G.shake, 8);
     G.shake_valid = shake;
@@ -276,7 +279,9 @@ int coop_player_update(ctx_t *ctx) {
     u32 world = MEM_R32(WORLD_PTR);
     if (ram_ptr(world)) copy_out(world + WORLD_SHAKE, G.shake_base, 8);   /* before either player's shake */
     u64 t0 = coop_now_ns();
+    coop_sound_before_host();
     ac3_interpret(ctx, FN_PLAYER_UPDATE);
+    coop_sound_after_host();
     coop_prof_add(PROF_HOST_UPDATE, t0);
     ctx_t host_result = *ctx;
     u64 t1 = coop_now_ns();

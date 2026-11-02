@@ -3,6 +3,7 @@
 #endif
 #include "ac3_runtime.h"
 #include "hle/coop.h"
+#include "hle/coop_sync.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -264,6 +265,8 @@ int main(int argc, char **argv) {
                     for (int k = 0; k < 3 && *s; k++) { ac3_coop_guest_weapons[k] = (u8)strtoul(s, &s, 0); if (*s == ',') s++; }
                 }
                 else if (strcmp(argv[j], "--coop-view") == 0) ac3_coop_view = 1;
+                else if (strcmp(argv[j], "--coop-ears") == 0 && j + 1 < argc) { j++; ac3_coop_ears = strcmp(argv[j], "guest") == 0 ? 1 : strcmp(argv[j], "host") == 0 ? 0 : -1; }
+                else if (strcmp(argv[j], "--coop-sync-log") == 0 && j + 1 < argc) ac3_coop_sync_log_open(argv[++j]);
                 else if (strcmp(argv[j], "--coop-split") == 0) ac3_coop_view = ac3_coop_split = 1;
 #ifdef AC3_COOP_PROBE
                 else if (ac3_coop_probe_arg(argc, argv, &j)) { }

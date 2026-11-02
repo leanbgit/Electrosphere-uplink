@@ -290,7 +290,7 @@ self.onmessage = async (e) => {
         for (const b of blobs) FS.symlink('/game/src/' + b.name, '/game/disc/' + b.name);
         if (patches.length) FS.mount(FS.filesystems.WORKERFS, { blobs: patches }, '/game/translation');
         FS.writeFile('/game/ACE3.BIN', exe);
-        if (extraFiles.length || (DEV && m.extraArgs && m.extraArgs.includes('--record-input'))) {
+        if (extraFiles.length || (DEV && m.extraArgs && (m.extraArgs.includes('--record-input') || m.extraArgs.includes('--coop-sync-log')))) {
           FS.mkdir('/rec');
           for (const x of extraFiles) FS.writeFile('/rec/' + String(x.name).replace(/[\/\\]/g, '_'), new Uint8Array(x.data));
         }

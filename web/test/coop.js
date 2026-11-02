@@ -42,6 +42,7 @@ async function loadRemembered() {
   if (!have.discs[1]) return status('No remembered discs: play once on the main page from this same address, then come back.', 'bad');
   status((n === 2 ? 'Both discs found.' : 'Disc 1 found (disc 2 missing).') + (have.card ? ' Using your memory card (read only).' : ' No save found: starting with an empty card.'), 'ok');
   $('start').disabled = false;
+  $('check').disabled = false;
 }
 
 // ---------------------------------------------------------------- input
@@ -146,7 +147,8 @@ $('start').onclick = async () => {
     const node = new AudioWorkletNode(audioCtx, 'ac3-audio', { outputChannelCount: [2], processorOptions: { ring } });
     node.connect(audioCtx.destination); await audioCtx.resume(); Atomics.store(ctrl, 1, 1);
   } catch (e) { log('Audio unavailable: ' + e, 'warn'); }
-  const extraArgs = ['--coop-guest', '--coop-split'];
+  const extraArgs = ['--coop-guest', '--coop-split', '--coop-ears', $('ears').value];
+  log(`Sound: ${$('ears').value === 'guest' ? "player 2's (as on the guest's computer)" : "player 1's (as on the host's computer)"}`);
   // Test switches until the guest has its own hangar turn: coop.html?guestPlane=1&guestWeapons=1,1,1
   // gives the guest that plane (0..36) and those weapon choices (gun, missile, missile; 0 = as the host's).
   const params = new URLSearchParams(location.search);
@@ -220,4 +222,59 @@ function finish(text) {
   $('start').disabled = false; $('stop').disabled = true; status(text);
 }
 $('stop').onclick = () => { if (ctrl) Atomics.store(ctrl, 0, 1); $('stop').disabled = true; status('Stopping…'); };
+
+// ---------------------------------------------------------------- sync check
+// Replays a recording unpaced with --coop-sync-log and saves the per-field
+// fingerprints (runtime/hle/coop_sync.h). Compare two of them, or one with the
+// native bench's, with tools/coop/hashcmp.py.
+function browserName() {
+  const u = navigator.userAgent;
+  const m = u.match(/(Edg|OPR|Firefox|Chrome|Version)\/(\d+)/g) || [];
+  const pick = ['Edg', 'OPR', 'Firefox', 'Chrome', 'Version'].map(k => m.find(x => x.startsWith(k + '/'))).find(Boolean) || 'browser';
+  return pick.replace('Edg/', 'edge').replace('OPR/', 'opera').replace('Firefox/', 'firefox').replace('Chrome/', 'chrome')
+             .replace('Version/', /Safari/.test(u) ? 'safari' : 'browser');
+}
+$('check').onclick = async () => {
+  const files = [...$('checkfiles').files];
+  const rec = files.find(f => /\.ac3i$/i.test(f.name));
+  if (!rec) { $('checkstatus').textContent = 'Pick the .ac3i file (and its .mcd files).'; $('checkstatus').className = 'bad'; return; }
+  const total = Math.floor((rec.size - 16) / 24);
+  const extraFiles = [{ name: rec.name, data: await rec.arrayBuffer() }];
+  for (const s of [1, 2]) {
+    const c = files.find(f => f.name.toLowerCase() === `${rec.name.toLowerCase()}.card${s}.mcd`);
+    if (c) extraFiles.push({ name: `${rec.name}.card${s}.mcd`, data: await c.arrayBuffer() });
+  }
+  if (extraFiles.length === 1) log('No .card1.mcd picked: the replay starts from an empty memory card and will go off script.', 'warn');
+  const out = `${rec.name.replace(/\.ac3i$/i, '')}.${browserName()}.sync.tsv`;
+  const extraArgs = ['--play-input', '/rec/' + rec.name, '--coop-guest', '--coop-split', '--coop-sync-log', '/rec/' + out,
+                     '--frames', String(total)];
+  if ($('checkold').checked) extraArgs.push('--coop-no-hangar-turn');
+  $('check').disabled = $('start').disabled = true; $('stop').disabled = false; $('downloads').replaceChildren();
+  ctrl = new Int32Array(new SharedArrayBuffer(16));
+  pad1 = new Int32Array(new SharedArrayBuffer(28)); pad1.set([1, 0, 0, 128, 128, 128, 128]);
+  log(`Sync check: ${rec.name}, ${total} fields, ${navigator.userAgent}`);
+  const t0 = performance.now(); let n = 0;
+  worker = new Worker('worker.js');
+  worker.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'frame') { n++; if (n % 30 === 0) { draw1(m); $('checkstatus').textContent = `field ${n} of ${total} (${Math.round(n * 1000 / (performance.now() - t0))} fields/s)`; } }
+    else if (m.type === 'frame2') { if (n % 30 === 0) draw2(m); }
+    else if (m.type === 'log') log(m.text);
+    else if (m.type === 'error') log(m.text, 'bad');
+    else if (m.type === 'progress') $('checkstatus').textContent = `Starting: ${m.stage}`;
+    else if (m.type === 'recording') {
+      for (const f of m.files.filter(f => f.name === out)) {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([f.data])); a.download = f.name; a.textContent = 'Download ' + f.name;
+        $('downloads').appendChild(a); a.click();
+        log(`Fingerprints saved: ${f.name} (${n} fields in ${((performance.now() - t0) / 1000).toFixed(0)} s). Send this file to compare.`, 'ok');
+      }
+    }
+    else if (m.type === 'exit') { finish('Sync check finished.'); $('check').disabled = false; $('checkstatus').textContent = `done: ${n} fields`; }
+  };
+  status('Sync check running (unpaced, no sound).', 'ok');
+  worker.postMessage({ type: 'start', ctrl: ctrl.buffer, pad: pad1.buffer, ring: new SharedArrayBuffer(8 + 44100 * 4), noPace: true,
+    discs: [1, 2].filter(d => have.discs[d]).map(d => have.discs[d]), patches: have.patches, caches: have.caches,
+    english: have.patches.length > 0, cards: [], extraFiles, extraArgs });
+};
+
 loadRemembered();

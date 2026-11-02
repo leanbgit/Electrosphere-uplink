@@ -17,6 +17,7 @@ extern int ac3_coop_split;                 /* 1 = show both views (one computer,
 extern u8  ac3_coop_guest_weapons[3];      /* the guest's hangar choice (SCENE_WEAPONS); 0 = as the host's */
 extern int ac3_coop_guest_plane;           /* the guest's plane (SCENE_PLANE, 0..36); -1 = as the host's */
 int  ac3_coop_hangar_turn(void);            /* 1 while the guest is choosing in the hangar (controller 2 drives it) */
+extern int ac3_coop_ears;                  /* whose sound the speakers play: -1 by computer, 0 host's, 1 guest's */
 extern int ac3_coop_hangar_turn_on;        /* 0 = no guest's turn in the hangar (for recordings made without one) */
 int  ac3_coop_intercept(ctx_t *ctx, u32 target);   /* 1 = handled the call */
 void ac3_coop_status(char *out, int cap);   /* one-line state, for logs */

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "ac3_oracle.h"
+#include "spu_ear.h"
 
 #define VM_DIRECT      0
 #define VM_LINEAR_INCN 1
@@ -117,7 +118,12 @@ static rate_t rate_of(int rate, int increase, int expo, s32 level) {
 #define ADPCM_SUSTAIN    0x02
 #define ADPCM_LOOP_START 0x04
 
-#define SPU_ADDR_MASK (SPU_RAM_SIZE - 16u)
+/* where voices may read samples: the ear has more room than the PS1's
+ * sound memory (spu_ear.h: the guest's plane sounds past 512 KB) */
+#ifndef SPU_SAMPLE_SPACE
+#define SPU_SAMPLE_SPACE SPU_RAM_SIZE
+#endif
+#define SPU_ADDR_MASK (SPU_SAMPLE_SPACE - 16u)
 
 static int block_load(chan_t *c, int v) {
     if (!ac3_spu_ram) return 0;
@@ -594,6 +600,9 @@ u16 ac3_spu_note_to_pitch(u16 note, u16 sample_note) {
 }
 
 void ac3_spu_cd_push(const s16 *interleaved, int nframes) {
+#ifndef AC3_SPU_EAR
+    if (ac3_spu_ear_on) ear_ac3_spu_cd_push(interleaved, nframes);   /* music and radio: the ear plays them too */
+#endif
     for (int i = 0; i < nframes; i++) {
         if (cd_wr - cd_rd >= CD_FIFO_FRAMES) {
             cd_rd = cd_wr - (CD_FIFO_FRAMES - 1u);
@@ -862,4 +871,26 @@ void ac3_spu_core_machine_save(FILE *f) {
     ac3_ms_bytes(f, rvb_down, (u32)sizeof rvb_down);
     ac3_ms_bytes(f, rvb_up, (u32)sizeof rvb_up);
     ac3_ms_u32(f, rvb_pos);
+}
+
+/* ---- the mixer's state, to copy one chip's into the other (spu_ear.h) ---- */
+#define STATE_SETTINGS(X) X(master) X(master_mode) X(master_cur) X(master_cyc) X(muted) X(cd_vol) X(cd_reverb_on) \
+    X(cd_mix_on) X(noise_voices) X(reverb_voices) X(lfo_voices) X(noise_clock) X(rvb_reg) X(rvb_mbase) X(rvb_wa) \
+    X(rvb_vol) X(rvb_enable)
+#define STATE_VOICES(X)   X(chan) X(repeat_addr) X(ignore_loop_start) X(noise_lfsr) X(noise_timer)
+#define STATE_RUNNING(X)  X(rvb_cur) X(rvb_down) X(rvb_up) X(rvb_pos) X(decoded_pos)
+#define STATE_CD(X)       X(cd_fifo) X(cd_rd) X(cd_wr)
+#define STATE_ALL(X)      STATE_SETTINGS(X) STATE_VOICES(X) STATE_RUNNING(X) STATE_CD(X)
+#define SIZE_OF(v) + (u32)sizeof v
+#define SAVE(v) memcpy(to, &v, sizeof v); to += sizeof v;
+#define LOAD(v) memcpy(&v, from, sizeof v); from += sizeof v;
+#define SKIP(v) from += sizeof v;
+
+u32 ac3_spu_core_state_size(void) { return 0 STATE_ALL(SIZE_OF); }
+void ac3_spu_core_state_save(u8 *to) { STATE_ALL(SAVE) }
+void ac3_spu_core_state_load(const u8 *from, u32 parts) {
+    if (parts & SPU_STATE_SETTINGS) { STATE_SETTINGS(LOAD) } else { STATE_SETTINGS(SKIP) }
+    if (parts & SPU_STATE_VOICES)   { STATE_VOICES(LOAD) }   else { STATE_VOICES(SKIP) }
+    if (parts & SPU_STATE_RUNNING)  { STATE_RUNNING(LOAD) }  else { STATE_RUNNING(SKIP) }
+    if (parts & SPU_STATE_CD)       { STATE_CD(LOAD) }
 }

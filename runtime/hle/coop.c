@@ -19,7 +19,7 @@ int ac3_coop_intercept(ctx_t *ctx, u32 target) {
     case FN_DRAW_TERRAIN:
     case FN_DRAW_WORLD:    return coop_view_skip_3d(target);
     }
-    return coop_hud_hook(ctx, target) || coop_enemies_hook(ctx, target) || coop_mission_hook(ctx, target) ||
+    return coop_sound_hook(ctx, target) || coop_hud_hook(ctx, target) || coop_enemies_hook(ctx, target) || coop_mission_hook(ctx, target) ||
            coop_hangar_hook(ctx, target) || coop_plane_hook(ctx, target);
 }
 

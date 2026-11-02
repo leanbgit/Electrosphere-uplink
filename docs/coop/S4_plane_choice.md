@@ -146,8 +146,8 @@ file as usual. When the guest is created, the file is taken apart as
 its pictures loaded (`0x800272F0`) with LoadImage sent to the second bank
 (same places as the host's: page (704, 256), colour tables (336, 312..319)),
 entries 0 and 1 decompressed (`0x800AFD08`) into the extra memory, the parts
-table relocated. Not loaded: its sounds (the guest's plane sounds like the
-host's).
+table relocated. Its sounds (entry 3) are played for the guest's ears only
+(S5_sound.md).
 
 The model's faces hold PS1 polygon words: a colour table halfword, then the
 texture page 4 bytes later (uv0 + colour table, uv1 + texture page). Faces
@@ -204,8 +204,6 @@ always has the bank; the HD renderer only makes the picture on screen.
 
 ## Still to find
 
-- The guest's plane sounds like the host's: its sounds are not loaded, and
-  the guest's engine sound is not played at all (it is host-only memory).
-  Both belong with the guest's own sound, which has to be played on the
-  guest's computer only, outside the emulated sound chip (the game reads the
-  chip's state every frame, so it must stay identical on both computers).
+- ~~The guest's plane sounds like the host's.~~ Done 2026-11-02: the
+  guest's engine and its plane's sounds play on the guest's computer, on a
+  second sound chip (S5_sound.md).

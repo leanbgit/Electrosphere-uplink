@@ -87,4 +87,4 @@ thing at the start of the next frame (`DrawOTag`).
   co-op is off); not run in a browser yet.
 - Things drawn straight into VRAM outside `DrawOTag` during flight (if any)
   appear only in the game's VRAM.
-- Sound is the host's (engine, warnings): to do in Phase 3.
+- Sound: each player hears its own (S5_sound.md, 2026-11-02).

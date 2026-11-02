@@ -149,6 +149,15 @@ u32  coop_plane_object_in(void);
 void coop_plane_patch_view(u32 ot_base, u32 entries);   /* the guest's picture: its HUD plane picture */
 void coop_plane_object_out(u32 old);
 /* coop_hangar.c */
+int  coop_sound_hook(ctx_t *ctx, u32 target);    /* what each player hears (coop_sound.c) */
+void coop_sound_before_host(void);
+void coop_sound_after_host(void);
+void coop_sound_after_guest(void);
+void coop_sound_mark(void);
+void coop_sound_replay_in(void);
+void coop_sound_guest_bank(u32 bank);            /* the guest's plane sounds (its file's entry 3; 0: none) */
+void coop_sound_bank_swap(void);                 /* the guest's sound definitions in / out */
+void coop_sound_after_replay(void);
 int  coop_hangar_hook(ctx_t *ctx, u32 target);   /* the guest's turn in the hangar */
 void coop_hangar_flight(void);                  /* a flight began */
 #endif

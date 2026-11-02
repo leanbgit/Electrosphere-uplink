@@ -1,6 +1,7 @@
 #include "coop.h"
 #include "spu_backend.h"
 #include "spu_core.h"
+#include "spu_ear.h"
 #include "ac3_oracle.h"
 #include <stdio.h>
 #include <string.h>
@@ -154,16 +155,26 @@ static void spu_ram_init(void) {
     if (!ac3_spu_ram) ac3_spu_ram = (u8 *)calloc(1, SPU_RAM_SIZE);
 }
 
-#ifdef AC3_COOP_PROBE
-/* coop_probe.c: hash of the SPU state the game can observe (RAM + voices) */
+/* coop_sync.c: hash of the SPU state the game can observe (RAM + voices).
+ * Field by field, so the structure's padding and layout (which differ
+ * between compilers) don't count. */
 void ac3_spu_state_hash(u64 *h) {
     u64 x = 0xCBF29CE484222325ull;
-    const u8 *b = (const u8 *)ac3_spu_voice;
-    for (size_t i = 0; i < sizeof ac3_spu_voice; i++) { x ^= b[i]; x *= 0x100000001B3ull; }
+#define MIX(v) (x ^= (u64)(u32)(v), x *= 0x100000001B3ull)
+    for (int i = 0; i < SPU_VOICES; i++) {
+        const spu_voice_t *v = &ac3_spu_voice[i];
+        MIX(v->start_addr); MIX(v->loop_addr); MIX(v->pitch); MIX(v->note); MIX(v->sample_note);
+        MIX((u16)v->vol_left); MIX((u16)v->vol_right); MIX((u16)v->volmode_left); MIX((u16)v->volmode_right);
+        MIX(v->adsr1); MIX(v->adsr2); MIX(v->keyed_on);
+    }
+#undef MIX
     if (ac3_spu_ram) for (u32 i = 0; i < SPU_RAM_SIZE; i += 8) { u64 w; memcpy(&w, ac3_spu_ram + i, 8); x ^= w; x *= 0x100000001B3ull; }
     *h = x;
 }
-#endif
+
+#ifndef AC3_SPU_EAR
+int ac3_spu_ear_on, ac3_spu_ear_heard, ac3_spu_ear_mirror;
+static FILE *real_wav;   /* AC3_SPU_REAL_WAV: the real chip's mix while the ear is heard (checks) */
 
 void ac3_spu_pump(void) {
     if (!spu_ready) return;
@@ -173,14 +184,52 @@ void ac3_spu_pump(void) {
      * (docs/coop/S1_determinism.md). */
     int want = ac3_oracle_deterministic() || ac3_coop_guest ? ac3_spu_field_frames() : spu->frames_wanted();
     while (want > 0) {
-        s16 buf[1024 * 2];
+        s16 buf[1024 * 2], ear[1024 * 2];
         int n = want > 1024 ? 1024 : want;
-        ac3_spu_core_mix(buf, n);
-        ac3_spu_dump_write(buf, n);
-        if (spu->submit) spu->submit(buf, n);
+        /* the ear following the real chip: copied just before mixing, so
+         * sound calls made anywhere in the frame are in it */
+        if (ac3_spu_ear_on && ac3_spu_ear_mirror) ac3_spu_ear_follow(SPU_STATE_SETTINGS | SPU_STATE_VOICES | SPU_STATE_RUNNING);
+        ac3_spu_core_mix(buf, n);            /* always: the game reads this chip's state */
+        const s16 *heard = buf;
+        if (ac3_spu_ear_on) {
+            ear_ac3_spu_core_mix(ear, n);
+            if (ac3_spu_ear_heard) heard = ear;
+        }
+        if (heard != buf && real_wav) fwrite(buf, 4, (size_t)n, real_wav);
+        ac3_spu_dump_write(heard, n);
+        if (spu->submit) spu->submit(heard, n);
         want -= n;
     }
 }
+
+/* The ear made identical to the real chip: its sound memory, library voice
+ * settings and mixer. Afterwards uploads and CD audio reach it as they come. */
+void ac3_spu_ear_copy_all(void) {
+    spu_ram_init();
+    if (!ear_ac3_spu_ram) ear_ac3_spu_ram = (u8 *)calloc(1, EAR_SAMPLE_SPACE);
+    if (!ear_ac3_spu_ram) return;
+    memcpy(ear_ac3_spu_ram, ac3_spu_ram, SPU_RAM_SIZE);
+    ac3_spu_ear_follow(SPU_STATE_ALL);
+    if (!ac3_spu_ear_on) {
+        const char *w = getenv("AC3_SPU_REAL_WAV");
+        if (w && *w && !real_wav && (real_wav = fopen(w, "wb")) != NULL)
+            printf("audio: the real sound chip's mix (raw 16-bit stereo 44100 Hz) -> %s\n", w);
+    }
+    ac3_spu_ear_on = 1;
+}
+
+/* The ear's voices (and other parts) made identical to the real chip's. */
+void ac3_spu_ear_follow(u32 parts) {
+    static u8 *state;
+    if (!state) state = (u8 *)malloc(ac3_spu_core_state_size());
+    if (!state) return;
+    ac3_spu_core_state_save(state);
+    ear_ac3_spu_core_state_load(state, parts);
+    if (parts & SPU_STATE_VOICES) memcpy(ear_ac3_spu_voice, ac3_spu_voice, sizeof ac3_spu_voice);
+}
+#else
+void ac3_spu_pump(void) { }   /* the ear is mixed by the real chip's pump */
+#endif
 
 static const int adpcm_f0[16] = { 0, 60, 115, 98, 122 };
 static const int adpcm_f1[16] = { 0, 0, -52, -55, -60 };
@@ -305,6 +354,9 @@ void psyq_SpuWrite(ctx_t *ctx) {
         return;
     }
     memcpy(ac3_spu_ram + transfer_addr, g, size);
+#ifndef AC3_SPU_EAR
+    if (ac3_spu_ear_on) memcpy(ear_ac3_spu_ram + transfer_addr, g, size);   /* samples: the ear has them too */
+#endif
     if (spu->upload) spu->upload(transfer_addr, g, size);
     hle_trace("SpuWrite", "%u bytes -> SPU 0x%05X", size, transfer_addr);
     transfer_addr += size;
@@ -318,6 +370,9 @@ void psyq_SpuWrite0(ctx_t *ctx) {
     u32 size = A0;
     if (transfer_addr + size > SPU_RAM_SIZE) size = SPU_RAM_SIZE - transfer_addr;
     memset(ac3_spu_ram + transfer_addr, 0, size);
+#ifndef AC3_SPU_EAR
+    if (ac3_spu_ear_on) memset(ear_ac3_spu_ram + transfer_addr, 0, size);
+#endif
     transfer_addr += size;
     transfer_done(ctx, size);
 }
@@ -863,6 +918,9 @@ static int clear_work_area(u32 mode) {
     if (rev_area_allocated(rev_start[mode])) return SPU_ERROR;
     u32 start = ac3_spu_reverb_work_start((int)mode);
     if (ac3_spu_ram) memset(ac3_spu_ram + start, 0, SPU_RAM_SIZE - start);
+#ifndef AC3_SPU_EAR
+    if (ac3_spu_ear_on) memset(ear_ac3_spu_ram + start, 0, SPU_RAM_SIZE - start);
+#endif
     return 0;
 }
 
