@@ -100,6 +100,17 @@ Checked on the user's recording `AL`: the guest climbs, gets CAUTION / PULL
 DOWN at about 1,000 ft, then is seen at field 3,697; both computers
 identical.
 
+## Space (2026-11-03)
+
+The guest is created when the host gets control (player mode state 1). In
+the space mission ("LEAVING ATMOSPHERE") the player's mode states are
+0x02000000 (intro) and 0x01000000 (control) instead: the player update
+(`0x8006D6D8`) flies the plane differently in that mode. So the guest was
+never created there. `mode_has_control` / `mode_intro` (`coop_game.h`) take
+both; the mission-over check uses them too. Checked on the user's recording
+`SP`: the guest appears at field 2,507, just after "LEAVING ATMOSPHERE";
+both computers identical.
+
 ## Known gaps (next steps)
 
 - Per-player results (kill count, score) in the results screen: not looked at.

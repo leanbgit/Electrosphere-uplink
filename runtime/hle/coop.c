@@ -52,8 +52,9 @@ void coop_prof_frame(void) {
 /* Once per field (psyq_etc.c). A mission is over when
  *   - the slot table moves (menus and briefings use their own), or
  *   - the player update has not run for 2 seconds and the host's player mode
- *     is no longer 1 (results, mission failed; a pause keeps mode 1), or
- *   - the host's player mode goes back to 2 (the next mission's intro).
+ *     no longer has control (results, mission failed; a pause keeps it), or
+ *   - the host's player mode goes back to the intro (the next mission's).
+ * (In space the modes are 0x01000000 and 0x02000000: coop_game.h.)
  * The guest's aircraft goes away with it, and a guest that was destroyed may
  * fly again in the next mission. */
 void ac3_coop_field(void) {
@@ -61,8 +62,8 @@ void ac3_coop_field(void) {
     u32 mode_ptr = MEM_R32(PLAYER_MODE_PTR);
     u32 mode = ram_ptr(mode_ptr) ? MEM_R32(mode_ptr + MODE_STATE) : 0;
     int left = MEM_R32(SLOT_TABLE) != G.flight_table ||
-               (ac3_vblank_count() - G.last_update_field > 120u && mode != 1u);
-    int restart = mode == 2u && G.last_mode != 2u;
+               (ac3_vblank_count() - G.last_update_field > 120u && !mode_has_control(mode));
+    int restart = mode_intro(mode) && !mode_intro(G.last_mode);
     G.last_mode = mode;
     if (!(G.live || G.dead) || !(left || restart)) return;
     if (G.live && ram_ptr(G.flight_table)) {

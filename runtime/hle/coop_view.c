@@ -63,8 +63,27 @@ static struct { int ready, active; u32 lo, hi; } OV;
 static u8 extra_backup[MAX_EXTRA_BYTES];
 static u8 *ov_backup;
 
+/* The guest's camera too (the view setup and the camera object, as the
+ * replay left them: G.cam). The picture itself was drawn with it, but the
+ * enhanced renderer reads the camera from the world while it draws (sky,
+ * fog, sun, far terrain, ocean, clouds: hw_world_camera), and the world
+ * holds the host's. In for the guest's pass, out again after. */
+static u8 cam_backup[N_VIEW_PRIVATE][0x100];
+static u32 cam_world;
+static void camera_swap(void) {
+    for (unsigned i = 0; i < N_VIEW_PRIVATE; i++) {
+        u32 a = cam_world + coop_view_private[i].addr, n = coop_view_private[i].len;
+        copy_out(a, cam_backup[i], n);
+        copy_in(a, G.cam[i], n);
+        memcpy(G.cam[i], cam_backup[i], n);   /* G.cam now holds the host's: swapped back the same way */
+    }
+}
+
 static void apply_overlay(void) {
     u8 *ram = ac3_ram;
+    cam_world = 0;
+    u32 w = MEM_R32(WORLD_PTR);
+    if (G.cam_valid && ram_ptr(w)) { cam_world = w; camera_swap(); }
     memcpy(ov_backup, ram + (OV.lo & AC3_RAM_MASK), OV.hi - OV.lo);
     memcpy(ram + (OV.lo & AC3_RAM_MASK), G.keep_buf, OV.hi - OV.lo);
     u32 used = 0;
@@ -93,6 +112,7 @@ int ac3_coop_gpu_draw(int begin) {
             memcpy(ac3_ram + (extra[i].addr & AC3_RAM_MASK), extra_backup + used, extra[i].len);
         }
         memcpy(ac3_ram + (OV.lo & AC3_RAM_MASK), ov_backup, OV.hi - OV.lo);
+        if (cam_world) camera_swap();   /* the host's camera back, the guest's into G.cam */
         OV.active = 0;
         OV.ready = 0;
     }

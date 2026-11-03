@@ -192,8 +192,6 @@ guest keeps its model; both computers identical.
 
 ## Still to find
 
-- The HD and WebGPU renderers do not have the second bank yet: there the
-  guest's plane has its own shape but the host's textures.
 - The guest's plane sounds like the host's (its sounds are not loaded).
 - The HUD's small plane picture is drawn from the host's file in the guest's
   view too.

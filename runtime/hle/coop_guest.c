@@ -102,11 +102,11 @@ static int create_guest(ctx_t *ctx, u32 slots) {
     if (!ram_ptr(host) || !ram_ptr(mine)) return 0;
     u32 h = MEM_R32(host + ENT_WORD);
     if (!(h & ENT_LIVE) || ent_live(mine)) return 0;          /* no host, or slot 1 taken */
-    /* Wait until the host has control (player mode 1). Before that the mission
+    /* Wait until the host has control (player mode 1; 0x01000000 in space). Before that the mission
      * moves the host's mode along (2 -> 4 -> 1) from outside the player
      * update, and a guest copied too early would stay in the intro mode. */
     u32 mode = MEM_R32(PLAYER_MODE_PTR);
-    if (!ram_ptr(mode) || MEM_R32(mode + MODE_STATE) != 1u) return 0;
+    if (!ram_ptr(mode) || !mode_has_control(MEM_R32(mode + MODE_STATE))) return 0;
     u8 e[ENT_SIZE];
     copy_out(host, e, ENT_SIZE);
     copy_in(mine, e, ENT_SIZE);

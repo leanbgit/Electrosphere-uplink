@@ -210,7 +210,10 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define MODE_FLAGS       0x00u   /* the player's status word (FN_PLAYER_STATUS 0x8006CB30 returns it) */
 #define MODE_DOWN        0x7000u /*   set when the player is shot down (0x80073880); the mission checker
                                     (0x800371C8, at 0x80037424) then ends the mission */
-#define MODE_STATE       0x04u   /* 1 = has control, 2 = mission intro */
+#define MODE_STATE       0x04u   /* 1 = has control, 2 = mission intro; in space (0x8006D6D8) */
+                                 /* 0x01000000 = has control, 0x02000000 = intro */
+static inline int mode_has_control(u32 m) { return m == 1u || m == 0x01000000u; }
+static inline int mode_intro(u32 m)       { return m == 2u || m == 0x02000000u; }
 
 /* the player's aircraft state block */
 #define BLOCK_SIZE       0xE0u

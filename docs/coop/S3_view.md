@@ -103,6 +103,24 @@ Both computers identical on `TG` and `AL`. Checked on the
 user's recording `TG` (field 9,000: "B1C" without a box before, "R201 TGT"
 with its box after); both computers identical.
 
+## Enhanced (HD) pictures (2026-11-03)
+
+On the guest's computer each frame is drawn twice at DrawOTag
+(`psyq_gpu.c`, `draw_ot`): the host's picture into the game's VRAM with the
+enhanced renderer's hooks off, then the guest's picture (laid over the
+game's memory: `apply_overlay`) with them on. So the HD picture is the
+guest's, and the second VRAM bank (the guest's plane's textures) reaches the
+WebGPU renderer (`PKT_BANK`; checked in a browser by the user).
+
+The renderer also reads the camera from the world while it draws
+(`hw_world_camera`: the view setup's rotation and the camera object's
+position; sky, fog, sun, far terrain, ocean and clouds are placed with it),
+and the world held the host's. Now the guest's camera (`G.cam`, the view
+setup and camera object as the replay left them) is laid over the world
+together with the picture and taken off afterwards. Checked in the HD bench
+on `TG`: the renderer now gets the guest's camera for the guest's pass (field
+8,896: host at x -2,635, guest at -19,191), and both computers stay identical.
+
 ## Wrong turns (kept for the record)
 
 | Attempt | Why it failed |
