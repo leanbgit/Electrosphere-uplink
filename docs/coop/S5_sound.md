@@ -31,7 +31,7 @@ missile launches as if they were its own.
 
 ## The ear: a second sound chip
 
-`spu_ear.h`: the sound-chip code (`spu_core.c`, `psyq_spu.c`) is compiled a
+`spu_ear.h`: the sound-chip code (`spu_core.c`, `psyq_spu*.c`) is compiled a
 second time under other names (`spu_ear_core.c`, `spu_ear_psyq.c`,
 `spu_ear_names.h`). It has its own voices, mixer and sound memory.
 

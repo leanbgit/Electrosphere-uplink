@@ -1,7 +1,7 @@
 /* spu_ear.h -- a second sound chip for what one player hears (co-op,
  * docs/coop/S5_sound.md).
  *
- * The game's sound chip (spu_core.c, psyq_spu.c) must stay identical on both
+ * The game's sound chip (spu_core.c, psyq_spu*.c) must stay identical on both
  * computers: the game reads its state back every frame. So in co-op it keeps
  * running exactly as the game drives it, but what the speakers play can come
  * from a second chip instead, "the ear": the same code compiled again under
