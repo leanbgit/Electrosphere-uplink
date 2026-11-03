@@ -227,4 +227,4 @@
   .gd-own summary { cursor: pointer; font-size: 15px; color: var(--ink-soft); }
   .gd-own[open] summary { margin-bottom: 6px; }
   #gd-own.always > summary { display: none; }
-  #gd-download { margin: 2px 0 4px; }
+

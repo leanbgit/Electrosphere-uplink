@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Electrosphere Uplink (design prototype)</title>
+<meta name="description" content="Play the Japanese release of Ace Combat 3: Electrosphere in your browser.">
+<script src="coi-boot.js"></script>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+<header class="sky">
+  <div class="wrap sky-inner">
+    <h1 class="wordmark">Electrosphere <span>Uplink</span></h1>
+    <p class="tagline">Ace Combat 3: Electrosphere, the Japanese release in English, in your browser. Alone or with a wingman.</p>
+  </div>
+</header>
+<div class="wrap">
+
+  <main class="deck">
+    <section class="screen" aria-label="Game screen">
+      <div class="bezel"><span class="mk" aria-hidden="true"></span>
+        <div id="screen-wrap">
+          <canvas id="screen" width="320" height="240" aria-label="Game screen"></canvas>
+          <canvas id="screen-hd" width="320" height="240" aria-label="Game screen (enhanced)"></canvas>
+          <div class="loader" id="loader" hidden role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <svg viewBox="0 0 200 330" aria-hidden="true">
+              <defs>
+                <!-- an original fighter seen from above, nose up; it fills from the tail to the nose -->
+                <path id="jet" d="M 100 6 C 104 16 108 36 110 60 L 112 82 L 122 100 L 124 124 L 184 184 L 186 200
+                  L 128 198 L 126 216 L 166 252 L 168 264 L 122 262 L 118 282 L 104 284 L 96 284 L 82 282 L 78 262
+                  L 32 264 L 34 252 L 74 216 L 72 198 L 14 200 L 16 184 L 76 124 L 78 100 L 88 82 L 90 60
+                  C 92 36 96 16 100 6 Z"/>
+                <clipPath id="jet-clip"><use href="#jet"/></clipPath>
+                <clipPath id="jet-lit"><rect id="ld-litrect" x="0" y="330" width="200" height="0"/></clipPath>
+              </defs>
+              <g id="ld-flame">
+                <path class="flame" d="M 97 284 L 106 284 L 101.5 318 Z"/><path class="flame late" d="M 94 284 L 103 284 L 98.5 318 Z"/>
+                <path class="flame core" d="M 97 284 L 103 284 L 100 302 Z"/>
+              </g>
+              <use href="#jet" class="hull"/>
+              <g clip-path="url(#jet-clip)">
+                <rect class="fill" id="ld-fill" x="0" y="284" width="200" height="0"/>
+                <rect class="edge" id="ld-edge" x="0" y="283" width="200" height="1.6"/>
+              </g>
+              <use href="#jet" class="hull-lit" clip-path="url(#jet-lit)"/>
+              <g class="lines">
+                <path d="M 100 34 C 104 42 105 54 104 66 L 100 72 L 96 66 C 95 54 96 42 100 34 Z"/>
+                <path d="M 114 206 L 120 250"/><path d="M 86 206 L 80 250"/>
+                <path d="M 124 124 L 128 198"/><path d="M 76 124 L 72 198"/>
+              </g>
+            </svg>
+            <div class="pct"><span id="ld-pct">0</span><small>%</small></div>
+            <div class="stage" id="ld-stage">Getting ready</div>
+            <div class="sub" id="ld-sub"></div>
+          </div>
+          <div class="coop-veil" id="coop-veil" hidden><p></p></div>
+          <div class="idle" id="idle">
+            <button class="play" id="start" disabled aria-describedby="idle-hint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg><span>Play</span>
+            </button>
+            <button class="ghost" id="to-online">Play online with a friend</button>
+            <p class="idle-hint" id="idle-hint"></p>
+          </div>
+        </div>
+        <div class="readouts" aria-live="polite">
+          <span>Speed <b id="fps">–</b></span>
+          <span>Language <b id="ro-lang">–</b></span>
+          <span>Controller <b id="ro-pad">keyboard</b></span>
+          <span>Graphics <b id="ro-gfx">–</b></span>
+        </div>
+      </div>
+      <div class="screen-tools">
+        <button class="quiet live-only" id="stop" disabled>Stop</button>
+        <button class="quiet" id="fullscreen">Fullscreen</button>
+        <label>Volume <input type="range" id="volume" min="0" max="100" value="80" aria-label="Volume"></label>
+        <label class="check flush sd-only"><input type="checkbox" id="smooth"> Smooth scaling</label>
+        <p class="note status" id="status" role="status"></p>
+      </div>
+    </section>
+
+    <aside class="console" aria-label="Setup and online play">
+      <div class="tabs" role="tablist" aria-label="Panels">
+        <button role="tab" class="tab" id="tab-setup" aria-selected="true" aria-controls="panel-setup">Settings</button>
+        <button role="tab" class="tab" id="tab-online" aria-selected="false" aria-controls="panel-online" tabindex="-1">Play online <span class="badge">2 players</span></button>
+      </div>
+      <div class="panel" id="panel-setup" role="tabpanel" aria-labelledby="tab-setup">
+        <p class="panel-lede">Remembered in this browser for next time.</p>
+        <div class="settings">
+          <div class="set-group">
+            <div class="row">
+              <label>Graphics <select id="gfx" aria-describedby="gfxhint">
+                <option value="0">Original (PS1 pixels)</option>
+                <option value="2">Enhanced 2×</option>
+                <option value="3">Enhanced 3×</option>
+                <option value="4">Enhanced 4×</option>
+                <option value="6">Enhanced 6×</option>
+              </select></label>
+              <label class="check flush"><input type="checkbox" id="widescreen" data-bit="1" checked> Widescreen</label>
+            </div>
+            <p class="note" id="gfxhint"></p>
+            <details class="gfx-more" id="gfx-more">
+              <summary>Enhanced graphics options</summary>
+              <p class="note">These change straight away, also while playing.</p>
+              <div class="gfx-grid">
+                <label class="check"><input type="checkbox" data-bit="2" checked> World effects <span class="sub">(all of the below)</span></label>
+                <label class="check"><input type="checkbox" data-bit="64"> Atmosphere and haze</label>
+                <label class="check"><input type="checkbox" data-bit="4"> Far terrain <span class="sub">(needs atmosphere)</span></label>
+                <label class="check"><input type="checkbox" data-bit="512" checked> Original fog <span class="sub">(the ground fades out at the game's own distance)</span></label>
+                <label class="check"><input type="checkbox" data-bit="16"> Clouds</label>
+                <label class="check"><input type="checkbox" data-bit="256" checked> Sun and glare</label>
+                <label class="check"><input type="checkbox" data-bit="128" checked> Sky lighting</label>
+                <label class="check"><input type="checkbox" data-bit="8"> Animated ocean <span class="sub">(sun glints on the waves can flicker)</span></label>
+              </div>
+              <button class="quiet compact" id="gfx-defaults">Defaults</button>
+            </details>
+          </div>
+          <div class="set-group">
+            <h4>Memory card</h4>
+            <p id="saveinfo"></p>
+            <p>Card 1 lives in this browser. Keep a copy, or bring a save from an emulator or a DexDrive (.mcd, .mcr or .gme).</p>
+            <div class="row"><button class="quiet small" id="export">Download card</button><button class="quiet small" id="importbtn">Load a card file</button><button class="quiet small" id="restorecard" hidden>Restore previous card</button><input type="file" id="import" accept=".mcd,.mcr,.gme" hidden></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" id="panel-online" role="tabpanel" aria-labelledby="tab-online" hidden>
+        <div id="step-online">
+          <h2 class="panel-title">Play online together</h2>
+          <p>Each player on their own computer. The host's memory card and settings are used, and nothing is saved on the guest's side. The guest flies as the second plane.</p>
+          <div class="row">
+            <label>Your name <input id="on-name" maxlength="24" size="12" autocomplete="nickname"></label>
+            <label class="check flush"><input type="checkbox" id="on-public"> Public room <span class="sub">(listed; you accept who joins)</span></label>
+          </div>
+          <div id="on-idle">
+            <div class="row"><button class="small" id="on-create">Create a room</button></div>
+            <div class="row">
+              <label>Room code <input id="on-code" placeholder="NEMO-XXXX" maxlength="9" size="10" autocomplete="off" spellcheck="false"></label>
+              <button class="quiet small" id="on-join">Join</button>
+              <button class="quiet small" id="on-browse">Public rooms</button>
+            </div>
+            <ul class="files" id="on-rooms"></ul>
+          </div>
+          <div id="on-room" hidden>
+            <p class="on-code" id="on-hostbits"><span id="on-roomcode"></span> <button class="quiet small" id="on-copy">Copy</button></p>
+            <ul class="files" id="on-requests"></ul>
+            <div class="row"><button class="small" id="on-go" hidden>Start the game</button><button class="quiet small" id="on-leave">Leave</button></div>
+          </div>
+          <p class="note" id="on-state" role="status"></p>
+        </div>
+      </div>
+    </aside>
+    <section class="controls" aria-labelledby="h-keys">
+        <div class="controls-head">
+          <h2 id="h-keys">Controls</h2>
+          <button class="quiet small" id="keys-reset">Default keys</button>
+        </div>
+        <p class="note">Click a key to change it, then press the new key (Esc cancels). Your keys are remembered in this browser.
+          Any standard game controller works too: press a button on it once the game is running.</p>
+        <div class="keygrid" id="keygrid"></div>
+      </section>
+  </main>
+
+  <div class="lower">
+    <section aria-labelledby="h-about">
+      <h2 id="h-about">About</h2>
+      <p>A free, non-commercial fan project: the game's own program runs on a recreation of the PlayStation's system libraries compiled for the web.</p>
+      <p>The English text is Project NEMO's fan translation (v0.9b3). Your saves, settings and the downloaded game data stay in this browser on this computer.</p>
+    </section>
+  </div>
+
+  <details class="diag">
+    <summary>Diagnostics</summary>
+    <p class="note">The game data the site streams is kept in this browser for faster starts. <button class="quiet small" id="forget">Forget stored game data</button></p>
+    <div id="log" role="log"></div>
+  </details>
+
+  <footer>
+    <p>Not affiliated with or endorsed by Bandai Namco. Ace Combat is a trademark of its owner. The game data is provided with permission, for free and non-commercial play only.</p>
+    <p>Fonts: Barlow and Barlow Condensed by Jeremy Tribby, SIL Open Font License (<a href="fonts/OFL.txt">licence</a>).</p>
+  </footer>
+</div>
+<script src="app.js"></script>
+<script src="netplay.js"></script>
+<script src="online.js"></script>
+<script src="proto.js"></script>
+</body>
+</html>

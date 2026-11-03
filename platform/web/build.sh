@@ -54,7 +54,7 @@ compile() {  # src extra-flags...
 
 objs=()
 HD_SRC=()
-[ "$HD" = 1 ] && HD_SRC=(renderer/hw/hw.c renderer/hw/hw_glue.c renderer/hw/hw_world.c renderer/hw/hw_settings.c renderer/webgpu/hw_fx_game.c renderer/webgpu/hw_packet.c renderer/webgpu/hw_ocean_web.c)
+[ "$HD" = 1 ] && HD_SRC=(renderer/hw/hw.c renderer/hw/hw_glue.c renderer/hw/hw_glue_fog.c renderer/hw/hw_glue_ops.c renderer/hw/hw_glue_diag.c renderer/hw/hw_record.c renderer/hw/hw_world.c renderer/hw/hw_settings.c renderer/webgpu/hw_fx_game.c renderer/webgpu/hw_packet.c renderer/webgpu/hw_ocean_web.c)
 for f in runtime/*.c runtime/hle/*.c platform/web/*.c host/*.c "${HD_SRC[@]}"; do
   # the debug oracle's frame stepper calls recompiled functions by name
   if [ "$MODE" = public ] && [ "$f" = runtime/hle/ac3_oracle_frame.c ]; then continue; fi
@@ -94,6 +94,7 @@ fi
 
 cp web/index.html web/style.css web/app.js web/worker.js web/data-worker.js web/netplay.js web/online.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
 cp web/test/coop.html web/test/coop.js web/test/coop.css "$OUT/"         # development: local co-op test page (not part of site/)
+cp web/test/proto.html web/test/proto.css web/test/proto.js "$OUT/"   # design prototype of index.html (not part of site/)
 mkdir -p "$OUT/fonts" && cp web/fonts/* "$OUT/fonts/"
 # Project NEMO's English patches (included with their permission)
 if [ -f web/patches/CD1.xdelta ]; then mkdir -p "$OUT/patches" && cp web/patches/CD?.xdelta "$OUT/patches/"; fi
