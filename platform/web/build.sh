@@ -92,7 +92,7 @@ if [ "$HD" = 1 ]; then
   cp web/test/bench.html "$OUT/"     # development: speed test on your own GPU (not part of site/)
 fi
 
-cp web/index.html web/style.css web/app.js web/worker.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
+cp web/index.html web/style.css web/app.js web/worker.js web/data-worker.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
 mkdir -p "$OUT/fonts" && cp web/fonts/* "$OUT/fonts/"
 # Project NEMO's English patches (included with their permission)
 if [ -f web/patches/CD1.xdelta ]; then mkdir -p "$OUT/patches" && cp web/patches/CD?.xdelta "$OUT/patches/"; fi
@@ -104,7 +104,7 @@ fi
 # (no serve scripts; includes Project NEMO's patches when web/patches/ has them).
 if [ "$MODE" = public ] && [ "$HD" = 1 ]; then
   rm -rf site && mkdir -p site/fonts
-  cp "$OUT"/{index.html,style.css,app.js,worker.js,audio-worklet.js,coi-boot.js,coi-sw.js,_headers,ac3.js,ac3.wasm,render-worker.js,render.js,render.wasm} site/
+  cp "$OUT"/{index.html,style.css,app.js,worker.js,data-worker.js,audio-worklet.js,coi-boot.js,coi-sw.js,_headers,ac3.js,ac3.wasm,render-worker.js,render.js,render.wasm} site/
   # the website: test hooks off (DEV), so pages cannot pass test-bench options
   sed -i 's/^const DEV = true; /const DEV = false;/' site/app.js site/worker.js site/render-worker.js
   grep -q '^const DEV = false;' site/app.js && grep -q '^const DEV = false;' site/worker.js && grep -q '^const DEV = false;' site/render-worker.js \
@@ -113,6 +113,9 @@ if [ "$MODE" = public ] && [ "$HD" = 1 ]; then
   # Project NEMO's English patches (permission granted): web/patches/CD1.xdelta, CD2.xdelta
   if [ -f web/patches/CD1.xdelta ]; then mkdir -p site/patches && cp web/patches/CD?.xdelta site/patches/;
   else echo "note: web/patches/ is empty; add CD1.xdelta and CD2.xdelta to site/patches/ before uploading"; fi
+  # The game data (site/gamedata/, written by tools/make_gamedata.py from your
+  # discs) is not part of the build: it is added to site/ for the web host only
+  # and never committed. Without it, players select their own disc files.
   (cd site && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort | xargs sha256sum > SHA256SUMS)
   echo "site/ ready: $(du -sh site | cut -f1)"
 fi

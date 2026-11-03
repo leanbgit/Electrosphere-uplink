@@ -19,7 +19,33 @@ const DISC_NAME = n => `Ace Combat 3 - Electrosphere (Japan, Asia) (Disc ${n}) (
 let ctrl, pad, ringHead, ringData, ringFrames;
 // enhanced graphics: port to the render worker and its "fields done" counter
 let hdPort = null, hdDone = null, hdSkip = 0, hdSet = null, hdSetSeen = 0;
-const reader = new FileReaderSync();
+// Disc images come either from the player's own files (File/Blob, read with
+// FileReaderSync) or from the website (RemoteFile, read through
+// data-worker.js). Both are read the same way: reader.readAsArrayBuffer(x.slice(a, b)).
+const fileReader = new FileReaderSync();
+let remote = null;              // { port, ctrl: Int32Array, data: Uint8Array }
+class RemoteFile {
+  constructor(id, name, size) { this.id = id; this.name = name; this.size = size; }
+  slice(a, b) { return { remote: this, a: Math.max(0, a), b: Math.min(this.size, b === undefined ? this.size : b) }; }
+}
+function remoteRead(file, a, b) {
+  const out = new Uint8Array(Math.max(0, b - a));
+  const MAX = remote.data.length;
+  for (let p = 0; p < out.length;) {
+    const len = Math.min(MAX, out.length - p);
+    Atomics.store(remote.ctrl, 0, 1);
+    remote.port.postMessage({ name: file.id, off: a + p, len });
+    while (Atomics.load(remote.ctrl, 0) === 1) Atomics.wait(remote.ctrl, 0, 1, 30000);
+    if (Atomics.load(remote.ctrl, 0) !== 2) throw new Error('could not download the game data (see the log)');
+    const n = Atomics.load(remote.ctrl, 1);
+    out.set(remote.data.subarray(0, n), p);
+    p += len;
+  }
+  return out.buffer;
+}
+const reader = {
+  readAsArrayBuffer(x) { return x && x.remote ? remoteRead(x.remote, x.a, x.b) : fileReader.readAsArrayBuffer(x); },
+};
 
 function log(text) { postMessage({ type: 'log', text }); }
 let lastProgress = {};
@@ -141,15 +167,19 @@ function sendNewEnglishCaches() {
 }
 
 // Read-ahead cache for the disc images: WORKERFS would otherwise do one
-// FileReaderSync call per read (the English loader makes ~70,000 small reads).
-// Reads are served from 1 MB blocks; the 48 most recent blocks stay in memory.
+// read per call (the English loader makes ~70,000 small reads). Own files are
+// read in 1 MB blocks. Streamed files (RemoteFile) are read in 64 KB blocks,
+// because at start-up the game looks at a few sectors all over the disc; when
+// reads run on sequentially (movies, music) the read-ahead grows to 1 MB.
+// About 48 MB of the most recent blocks stay in memory.
 function installReadCache(WORKERFS) {
-  const BLOCK = 1 << 20, MAX_BLOCKS = 48, blocks = new Map(), ids = new WeakMap();
-  let nextId = 1;
+  const BIG = 1 << 20, SMALL = 64 << 10, MAX_BYTES = 48 << 20, blocks = new Map(), ids = new WeakMap(), seq = new Map();
+  let nextId = 1, bytes = 0;
   WORKERFS.stream_ops.read = function (stream, buffer, offset, length, position) {
     const blob = stream.node.contents, size = stream.node.size;
     if (position >= size) return 0;
     let id = ids.get(blob); if (!id) ids.set(blob, id = nextId++);
+    const BLOCK = blob instanceof RemoteFile ? SMALL : BIG;
     const end = Math.min(size, position + length);
     let p = position;
     while (p < end) {
@@ -157,9 +187,18 @@ function installReadCache(WORKERFS) {
       let b = blocks.get(key);
       if (b) blocks.delete(key);                      // refresh LRU position
       else {
-        const s0 = bi * BLOCK;
-        b = new Uint8Array(WORKERFS.reader.readAsArrayBuffer(blob.slice(s0, Math.min(size, s0 + BLOCK))));
-        if (blocks.size >= MAX_BLOCKS) blocks.delete(blocks.keys().next().value);
+        // sequential misses on a streamed file: fetch the next 1 MB at once
+        const last = seq.get(id), run = BLOCK === SMALL && last !== undefined && (bi === last + 1 || bi === last) ? BIG / SMALL : 1;
+        const s0 = bi * BLOCK, s1 = Math.min(size, s0 + run * BLOCK);
+        const all = new Uint8Array(reader.readAsArrayBuffer(blob.slice(s0, s1)));
+        for (let k = 0; k * BLOCK < all.length; k++) {
+          const kb = all.subarray(k * BLOCK, Math.min(all.length, (k + 1) * BLOCK)), kk = id + ':' + (bi + k);
+          if (k === 0) { b = kb; continue; }
+          if (!blocks.has(kk)) { blocks.set(kk, kb); bytes += kb.length; }
+        }
+        seq.set(id, bi + run - 1);
+        bytes += b.length;
+        while (bytes > MAX_BYTES) { const k0 = blocks.keys().next().value; bytes -= blocks.get(k0).length; blocks.delete(k0); }
       }
       blocks.set(key, b);
       const from = p - bi * BLOCK, n = Math.min(end - p, b.length - from);
@@ -197,6 +236,14 @@ self.onmessage = async (e) => {
   ringFrames = ringData.length >> 1;
 
   try {
+    // 0. game data streamed from the website instead of the player's files
+    if (m.remote) {
+      remote = { port: m.remote.port, ctrl: new Int32Array(m.remote.sab, 0, 4), data: new Uint8Array(m.remote.sab, 16) };
+      const f = m.remote.files;
+      m.discs = ['disc1', 'disc2'].filter(n => f[n]).map(n => new RemoteFile(n, n + '.bin', f[n].size));
+      if (f.en1) m.caches = [1, 2].filter(d => f['en' + d]).map(d => ({ disc: d, file: new RemoteFile('en' + d, `en${d}.cache`, f['en' + d].size) }));
+    }
+
     // 1. identify the discs by their volume ID, whatever the files are called
     self.AC3W.progress('check', 0, 0, 1);
     const discs = {};
@@ -262,7 +309,7 @@ self.onmessage = async (e) => {
         // module object must be taken here, not from the awaited result.
         self.Module = mod;
         const FS = mod.FS;
-        if (!FS.filesystems.WORKERFS.reader) FS.filesystems.WORKERFS.reader = new FileReaderSync();
+        FS.filesystems.WORKERFS.reader = reader;   // own files and streamed ones alike
         installReadCache(FS.filesystems.WORKERFS);
         FS.mkdir('/game');
         FS.mkdir('/game/src');            // the user's files, read-only, read in place

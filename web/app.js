@@ -187,7 +187,8 @@ async function forgetAll() {
     await idbDel('patches', d); await idbDel('encache', d);
     for (const k of ['disc', 'patch']) if (have[k][d] && have[k][d].src === 'stored') delete have[k][d];
   }
-  log('Remembered disc images and English data removed from this browser (saves kept).', 'ok');
+  dataWorker.postMessage({ type: 'forget' });
+  log('Remembered disc images, downloaded game data and English data removed from this browser (saves kept).', 'ok');
   await loadRemembered();
   renderFiles();
 }
@@ -200,17 +201,24 @@ function renderFiles() {
     const x = have.disc[d];
     add(x ? `Disc ${d}: ${SRC[x.src]} (${(x.file.size / 1048576).toFixed(0)} MB)` : `Disc ${d}: not selected`, x ? 'ok' : 'dim');
   }
-  $('start').disabled = !have.disc[1] || running;
+  const ready = !!have.disc[1] || !!gameData;
+  $('start').disabled = !ready || running;
+  // the disc picker is an option when the site streams the game, the only way otherwise
+  const own = $('gd-own');
+  own.classList.toggle('always', !gameData && gameDataState !== 'loading');
+  if (!gameData && gameDataState !== 'loading') own.open = true;
+  $('gd-title').textContent = gameData ? 'Game data' : 'Game discs';
   // always English (Project NEMO's patches ship with the site); a copy of the
   // site without them can only run the original Japanese text
   $('enhint').textContent = !have.patch[1] ? 'This copy of the site is missing patches/CD1.xdelta, so the game will be in Japanese.'
     : !have.patch[2] ? 'This copy of the site is missing patches/CD2.xdelta, so disc 2 will be in Japanese.' : '';
   // checklist and readouts
-  $('step-discs').classList.toggle('done', !!have.disc[1]);
-  $('step-settings').classList.toggle('done', !!have.disc[1]);
+  $('step-discs').classList.toggle('done', ready);
+  $('step-settings').classList.toggle('done', ready);
   $('ro-lang').textContent = have.patch[1] ? 'English' : 'Japanese';
+  renderData();
   const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
-  $('idle-hint').textContent = (have.disc[1] ? '' : 'Add your game discs in the pre-flight check to play.') +
+  $('idle-hint').textContent = (ready ? '' : gameDataState === 'loading' ? 'Getting the game ready…' : 'Add your game discs in the pre-flight check to play.') +
     (touchOnly ? ' You will need a keyboard or a game controller: touch controls are not available yet.' : '');
 }
 $('pick').onchange = e => classify(e.target.files);
@@ -219,6 +227,47 @@ const drop = $('drop');
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); classify(e.dataTransfer.files); };
+
+// ------------------------------------------------------- streamed game data
+// When the site hosts the game data (gamedata/manifest.json, written by
+// tools/make_gamedata.py), web/data-worker.js streams it to the game and keeps
+// what it downloaded in this browser. Disc files the player selects still
+// take precedence (offline play, or a copy of the site without game data).
+let gameData = null, gameDataState = 'loading', dataStatus = null;
+const dataWorker = new Worker('data-worker.js');
+const MB = n => (n / 1048576).toFixed(0);
+function renderData() {
+  const el = $('gd-status'), btn = $('gd-download');
+  if (!gameData) { el.textContent = ''; btn.hidden = true; return; }
+  if (have.disc[1]) { el.textContent = 'Your own disc files are used (see below).'; btn.hidden = true; return; }
+  const s = dataStatus;
+  if (!s) { el.textContent = 'Streamed from this site: nothing to select.'; btn.hidden = true; return; }
+  const all = s.have === s.total;
+  el.textContent = !s.stored ? 'Streamed from this site: nothing to select. (This browser cannot store it, so it is downloaded again on each visit.)'
+    : s.full ? `Streamed from this site: nothing to select. This browser's storage is full after ${MB(s.bytesHave)} of ${MB(s.bytesTotal)} MB; the rest is downloaded when needed.`
+    : all ? `Streamed from this site and fully stored in this browser (${MB(s.bytesTotal)} MB): starts and plays without waiting.`
+    : `Streamed from this site: nothing to select. Stored in this browser: ${MB(s.bytesHave)} of ${MB(s.bytesTotal)} MB` +
+      (s.background ? ' (downloading in the background).' : '. The rest downloads while you play.');
+  btn.hidden = !s.stored || all || s.full;
+  btn.textContent = s.background ? 'Pause download' : 'Download all now';
+}
+dataWorker.onmessage = e => {   // (renderData also runs from renderFiles)
+  const m = e.data;
+  if (m.type === 'ready') { gameData = m.manifest; gameDataState = 'ready'; renderFiles(); renderData(); }
+  else if (m.type === 'unavailable') { gameDataState = 'none'; renderFiles(); renderData(); }
+  else if (m.type === 'status') {
+    dataStatus = m; renderData();
+    if (running && !$('loader').hidden && m.fetched) $('ld-sub').textContent = `Downloading game data: ${MB(m.fetched)} MB`;
+  }
+  else if (m.type === 'log') log(m.text, 'dim');
+  else if (m.type === 'error') { log(m.text, 'bad'); if (running) $('status').textContent = m.text; }
+};
+dataWorker.onerror = () => { gameDataState = 'none'; renderFiles(); renderData(); };
+dataWorker.postMessage({ type: 'init', url: 'gamedata/manifest.json' });
+$('gd-download').onclick = () => {
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  dataWorker.postMessage({ type: dataStatus && dataStatus.background ? 'pause' : 'download' });
+};
 
 // ------------------------------------------------------------------- saves
 const DB = 'ac3online', STORE = 'cards';   // storage name from the project's first name; kept so saves and English data survive
@@ -595,6 +644,13 @@ $('start').onclick = async () => {
   const english = !!have.patch[1];
   buildingEnglish = [];
   const discs = [1, 2].filter(d => have.disc[d]).map(d => have.disc[d].file);
+  let remote = null;                                       // streamed game data (no disc files selected)
+  if (!discs.length && gameData) {
+    const ch = new MessageChannel(), sab = new SharedArrayBuffer(16 + (1 << 20));
+    dataWorker.postMessage({ type: 'game', port: ch.port2, sab }, [ch.port2]);
+    remote = { port: ch.port1, sab, files: gameData.files };
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  }
   const patches = [];
   if (english) for (const d of [1, 2]) {
     const x = have.patch[d]; if (!x) continue;
@@ -605,7 +661,8 @@ $('start').onclick = async () => {
   if (english) for (const n of [1, 2]) {
     const c = await idbGet('encache', n);
     if (c) { caches.push({ disc: n, file: new Blob([c.data]) }); log(`using English data for disc ${n} stored in this browser`); }
-    else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); if (have.disc[n]) buildingEnglish.push(n); }
+    else if (remote && gameData.files['en' + n]) { /* prebuilt English data comes with the streamed game data */ }
+    else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); if (have.disc[n] || remote) buildingEnglish.push(n); }
   }
   const stored = await cardGet(0);
   const cards = stored ? [{ slot: 0, data: stored.data.buffer.slice(0) }] : [];
@@ -613,7 +670,9 @@ $('start').onclick = async () => {
   worker = new Worker('worker.js');
   worker.onmessage = async e => {
     const m = e.data;
-    if (m.type === 'frame') { if (m.buf) latest = m; frames++; if (m.seq === 1 || frames === 1) loader.hide('game'); const t = performance.now(); if (t - lastFpsT > 1000) { $('fps').textContent = `${Math.round(frames * 1000 / (t - lastFpsT))} fps`; frames = 0; lastFpsT = t; } }
+    if (m.type === 'frame') { if (m.buf) latest = m; frames++;
+      if (m.seq === 1 || frames === 1) { loader.hide('game'); if (remote) dataWorker.postMessage({ type: 'download' }); }   // then fill the browser's copy while playing
+      const t = performance.now(); if (t - lastFpsT > 1000) { $('fps').textContent = `${Math.round(frames * 1000 / (t - lastFpsT))} fps`; frames = 0; lastFpsT = t; } }
     else if (m.type === 'log') log(m.text);
     else if (m.type === 'progress') loaderStage(m.stage, m.disc, m.done, m.total);
     else if (m.type === 'hd-off') hdOff(m.text);
@@ -624,7 +683,7 @@ $('start').onclick = async () => {
   };
   worker.onerror = e => { log('worker error: ' + e.message, 'bad'); stop(); };
   worker.postMessage({ type: 'start', ctrl: ctrl.buffer, pad: padSab, ring,
-    discs, patches, caches, english, cards, hd }, hd ? [hd.port] : []);
+    discs, patches, caches, english, cards, hd, remote }, [...(hd ? [hd.port] : []), ...(remote ? [remote.port] : [])]);
   $('status').textContent = 'Running. Click the screen area, then use the keyboard or a controller.';
 };
 

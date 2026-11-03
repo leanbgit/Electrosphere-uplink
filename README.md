@@ -1,7 +1,6 @@
 # Electrosphere Uplink
 
-**Ace Combat 3: Electrosphere in your web browser**, played from your own discs,
-in English with an optional enhanced renderer: up to 6× resolution, widescreen, a draw distance to the horizon,
+**Ace Combat 3: Electrosphere in your web browser**, in English with an optional enhanced renderer: up to 6× resolution, widescreen, a draw distance to the horizon,
 atmosphere, volumetric clouds, forests and an animated ocean.
 
 You can play it yourself right now <a href="https://ac3uplink.com/"> here </a>
@@ -10,10 +9,11 @@ The game's own program runs on a recreation
 of the PlayStation's system libraries, compiled to WebAssembly, and the
 enhanced picture is drawn with WebGPU.
 
-> **No game data is included.** No disc images, no executable and no game
-> code. You need your own copy of the Japanese release (both discs). Everything
-> you select stays in your browser. Project NEMO's English translation patches
-> are included.
+> **No game data is in this repository.** No disc images, no executable and
+> no game code. The website streams the game data, which is hosted with
+> permission for free, non-commercial play; a copy built from this repository
+> needs the discs (see below). Project NEMO's English translation patches are
+> included.
 
 ![alt text][menu]
 
@@ -60,10 +60,20 @@ python web/dist-public/serve.py       # http://localhost:8080
 ```
 
 Then drop your two disc images on the page and press **Play**.
+
+To stream the game data instead, as the website does, cut your two disc images
+into pieces with `tools/make_gamedata.py` (it writes `gamedata/` with a
+`manifest.json`; the optional prebuilt English data skips the first-start
+build) and put that folder next to the page. It is game data: keep it out of
+the repository.
+
+```sh
+python tools/make_gamedata.py "<Disc 1>.bin" "<Disc 2>.bin" web/dist-public/gamedata
+```
 ### No game code
 
 `ac3.wasm` contains no code from the game. When you press Play, `ACE3.BIN` is
-read from *your* disc 1 and run by a MIPS interpreter (`runtime/ac3_interp.c`).
+read from disc 1 (streamed or your own) and run by a MIPS interpreter (`runtime/ac3_interp.c`).
 On a desktop PC it runs several times faster than the game needs. The build
 checks that no translated game function ended up in it.
 

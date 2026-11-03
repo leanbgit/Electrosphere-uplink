@@ -52,3 +52,5 @@ ACE3.BIN
 *.gme
 *.ac3i
 /rec/
+/web/dist-public/gamedata
+gamedata/
