@@ -79,9 +79,11 @@ function fromServer(m) {
     state('Share the code with the other player. Waiting for them to join…');
     view(true);
     break;
-  case 'rooms': {
+  case 'rooms': {                                  // open rooms only: full or started ones are not listed
     const ul = el('on-rooms'); ul.replaceChildren();
-    if (!m.rooms.length) { const li = document.createElement('li'); li.className = 'dim'; li.textContent = 'No public rooms right now.'; ul.appendChild(li); }
+    el('on-rooms-tools').hidden = false;
+    el('on-rooms-time').textContent = `as of ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    if (!m.rooms.length) { const li = document.createElement('li'); li.className = 'dim'; li.textContent = 'No open public rooms right now.'; ul.appendChild(li); }
     for (const r of m.rooms) {
       const li = document.createElement('li'), b = document.createElement('button');
       li.textContent = `${r.name}'s room `;
@@ -129,7 +131,7 @@ async function create() {
   try {
     await server();
     S.role = 'host';
-    toServer({ t: 'host', name: name(), public: el('on-public').checked, version: await version() });
+    toServer({ t: 'host', name: name(), public: !el('on-private').checked, version: await version() });
   } catch (e) { state(e.message, 'bad'); }
 }
 async function join(how) {
@@ -337,7 +339,8 @@ export function initOnline() {
   el('on-join').onclick = () => { const c = el('on-code').value.trim(); if (c) join({ code: c }); };
   el('on-code').onkeydown = e => { if (e.key === 'Enter') el('on-join').click(); };
   el('on-browse').onclick = browse;
-  el('on-public').onchange = () => { if (S.role === 'host') toServer({ t: 'set', public: el('on-public').checked }); };
+  el('on-refresh').onclick = browse;
+  el('on-private').onchange = () => { if (S.role === 'host') toServer({ t: 'set', public: !el('on-private').checked }); };
   el('on-go').onclick = go;
   el('on-leave').onclick = () => { if (S.started && app.running) game.stop(); leave(false); };
   el('on-copy').onclick = () => navigator.clipboard && navigator.clipboard.writeText(S.code || '');

@@ -129,7 +129,7 @@
           <p>Each player on their own computer. The host's memory card and settings are used, and nothing is saved on the guest's side. The guest flies as the second plane.</p>
           <div class="row">
             <label>Your name <input id="on-name" maxlength="24" size="12" autocomplete="nickname"></label>
-            <label class="check flush"><input type="checkbox" id="on-public"> Public room <span class="sub">(listed; you accept who joins)</span></label>
+            <label class="check flush"><input type="checkbox" id="on-private" checked> Private room <span class="sub">(only people with the code can join; untick to list it publicly, and you accept who joins)</span></label>
           </div>
           <div id="on-idle">
             <div class="row"><button class="small" id="on-create">Create a room</button></div>
@@ -139,6 +139,7 @@
               <button class="quiet small" id="on-browse">Public rooms</button>
             </div>
             <ul class="files" id="on-rooms"></ul>
+            <div class="row" id="on-rooms-tools" hidden><button class="quiet small" id="on-refresh">Refresh the list</button> <span class="note" id="on-rooms-time"></span></div>
           </div>
           <div id="on-room" hidden>
             <p class="on-code" id="on-hostbits"><span id="on-roomcode"></span> <button class="quiet small" id="on-copy">Copy</button></p>

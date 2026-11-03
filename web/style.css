@@ -176,6 +176,7 @@ label.check input { margin-top: 4px; accent-color: var(--ok); }
 .note { font-size: 14px; color: var(--ink-soft); margin: 4px 0 0; min-height: 1em; }
 .note.ok { color: var(--ok); } .note.bad { color: var(--bad); }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.row[hidden] { display: none; }
 #forget { margin-top: 6px; }
 
 /* online panel (web/online.js) */

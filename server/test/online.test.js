@@ -63,7 +63,7 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
 
   // public room: listed, joining asks the host
   const h2 = await player(browser, 'Abyss'), g2 = await player(browser, 'Kei');
-  await h2.check('#on-public');
+  await h2.uncheck('#on-private');
   await h2.click('#on-create');
   await h2.waitForFunction(() => /^NEMO-/.test(document.getElementById('on-roomcode').textContent));
   await g2.click('#on-browse');
@@ -76,9 +76,16 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
   await waitState(g2, /Waiting for Abyss to start/);
   await waitState(h2, /Kei is ready/);
   check(true, 'accepted: connected and ready');
+  const g3 = await player(browser, 'Yuang');
+  await g3.click('#on-browse');
+  await g3.waitForFunction(() => !document.getElementById('on-rooms-tools').hidden);
+  check(!/Abyss/.test(await g3.textContent('#on-rooms')), 'a full room is not listed');
   await g2.click('#on-leave');
   await waitState(h2, /disconnected|left/);
   check(true, 'the guest left: the host is told');
+  await g3.click('#on-refresh');
+  await g3.waitForFunction(() => /Abyss/.test(document.getElementById('on-rooms').textContent), null, { timeout: 5000 });
+  check(true, 'Refresh: the room is open again and listed');
 
   await browser.close();
   console.log(failed ? `${failed} FAILED` : 'all passed');
