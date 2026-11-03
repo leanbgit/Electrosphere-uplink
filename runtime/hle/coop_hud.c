@@ -60,6 +60,7 @@ void coop_hud_swap(void) {
             u32 r = MEM_R32(HUD_RECS + 4u * t);
             if (ram_ptr(r)) copy_out(r, G.hud_rec[t], HREC_SIZE);
         }
+        coop_hud_new_targets();   /* (notes which slots are in use) */
         G.hud_valid = 1;
     }
     exchange(HUD_LOCK, G.hud_lock, HUD_LOCK_LEN);
@@ -68,6 +69,45 @@ void coop_hud_swap(void) {
     for (u32 t = 0; t < N_SLOTS; t++) {
         u32 r = MEM_R32(HUD_RECS + 4u * t);
         if (ram_ptr(r)) exchange(r, G.hud_rec[t], HREC_SIZE);
+    }
+}
+
+/* Objects that appear during the mission (new enemies after a mission
+ * update, ...) get their HUD record set up by the game: the kind and class
+ * of target (+3, +2), which decide its box and label. Only the host's record
+ * gets that; the guest's copy kept whatever was in that slot before (an
+ * earlier object, or nothing), so in the guest's view those targets had the
+ * wrong box or none, and could not be locked on. When a slot comes into use,
+ * or the host's record has the object's kind and the guest's another, the
+ * guest's copy starts again from the host's. And every frame the parts that
+ * describe the object, not the player's view of it (+2..+5: class, kind
+ * and two more set with them; +0x20..+0x23), are the host's: a stale label sent the
+ * label sprite off the end of its table (the whole word sheet drawn as one
+ * huge "box"). The same for the radar blip's colour (BLIP_KIND), which the
+ * game also sets only when the object appears: new enemies were missing from
+ * the guest's radar. Call with the host's records in (before the guest is swapped in). */
+static const u8 hrec_same[][2] = { { 0x02, 0x06 }, { 0x20, 0x24 } };   /* [from, to) */
+void coop_hud_new_targets(void) {
+    u32 slots = MEM_R32(SLOT_TABLE);
+    if (!ram_ptr(slots)) return;
+    for (u32 t = SLOT_FIRST_AIRCRAFT; t < N_SLOTS; t++) {
+        u32 e = slot_entity(slots, t), r = MEM_R32(HUD_RECS + 4u * t);
+        u8 live = ram_ptr(e) && ent_live(e);
+        u32 kind = live ? MEM_R8U(e + ENT_KIND) : 0u;    /* the record's HREC_KIND once set up */
+        if (G.hud_valid && ram_ptr(r) && live &&
+            (!G.hud_live[t] || (MEM_R8U(r + HREC_KIND) == kind && G.hud_rec[t][HREC_KIND] != kind))) {
+            copy_out(r, G.hud_rec[t], HREC_SIZE);
+            if (coop_debug > 0) printf("coop: field %u slot %u: new target (kind %02X): the guest's HUD record from the host's\n",
+                                       ac3_vblank_count(), t, MEM_R8U(r + HREC_KIND));
+        }
+        if (G.hud_valid && ram_ptr(r) && live)    /* what the object is, the same for both players: always the host's */
+            for (unsigned k = 0; k < sizeof hrec_same / sizeof hrec_same[0]; k++)
+                for (u32 i = hrec_same[k][0]; i < hrec_same[k][1]; i++) G.hud_rec[t][i] = (u8)MEM_R8U(r + i);
+        if (G.hud_valid && live) {                /* its radar colour too (set when it appears: 0x8004ECF4) */
+            u32 b = RADAR_BLIPS + BLIP_SIZE * t;
+            G.hud_static[0][b - HUD_ARRAYS + BLIP_KIND] = (u8)MEM_R8U(b + BLIP_KIND);
+        }
+        G.hud_live[t] = live;
     }
 }
 
@@ -96,9 +136,10 @@ void coop_threat_swap(void) {
  * (FN_SHOW_WARNING called from outside the picker, e.g. FN_MISSION_RULES)
  * are shown to both: raised once more on the guest's copy. (Lock-on alerts:
  * coop_enemies.c.) */
+#define RA_STAY_LOW_WARNING 0x8005491Cu   /* the mission rules' PULL DOWN in scene 0x2C: the host's height (the guest's: coop_guest_warnings) */
 static int warn_both(ctx_t *ctx) {
     int from_picker = ac3_guest_ra >= FN_PICK_WARNING && ac3_guest_ra < FN_SHOW_WARNING;   /* the picker's own calls */
-    if (!G.live || G.replaying || !G.hud_valid || from_picker) return 0;
+    if (!G.live || G.replaying || !G.hud_valid || from_picker || ac3_guest_ra == RA_STAY_LOW_WARNING) return 0;
     ctx_t entry = *ctx;
     ac3_interpret(ctx, FN_SHOW_WARNING);
     ctx_t after = *ctx;
@@ -107,6 +148,20 @@ static int warn_both(ctx_t *ctx) {
     ac3_interpret(ctx, FN_SHOW_WARNING);
     exchange(WARN_STATE, G.hud_static[HUD_WARN], coop_hud_static[HUD_WARN].len);
     *ctx = after;
+    return 1;
+}
+
+/* FN_WARN_RESET clears the warning on screen when the mission moves on (the
+ * mission checker, 0x80037A1C and 0x80037B8C): the guest's too. */
+#define RA_WARN_RESET_1 0x80037A24u
+#define RA_WARN_RESET_2 0x80037B94u
+static int warn_reset_both(ctx_t *ctx) {
+    if (!G.live || G.replaying || G.in_guest_update || !G.hud_valid) return 0;
+    if (ac3_guest_ra != RA_WARN_RESET_1 && ac3_guest_ra != RA_WARN_RESET_2) return 0;   /* the mission checker's (others are each player's own HUD) */
+    ac3_interpret(ctx, FN_WARN_RESET);
+    exchange(WARN_STATE, G.hud_static[HUD_WARN], coop_hud_static[HUD_WARN].len);
+    ac3_interpret(ctx, FN_WARN_RESET);
+    exchange(WARN_STATE, G.hud_static[HUD_WARN], coop_hud_static[HUD_WARN].len);
     return 1;
 }
 
@@ -177,7 +232,10 @@ void coop_message_log(void) {
 }
 
 int coop_kill_messages(ctx_t *ctx, u32 target) {
-    if (!G.live || !G.replaying || !msg_state()) return 0;
+    /* in the guest's view replay; or, after the guest took over as the player
+     * (its kills still carry its slot-1 handle), in the frame itself */
+    int here = G.live ? G.replaying : G.took_over && !G.replaying;
+    if (!here || !msg_state()) return 0;
     u32 slots = MEM_R32(SLOT_TABLE);
     if (!ram_ptr(slots)) return 0;
     int found[N_SLOTS];
@@ -326,6 +384,7 @@ static void label_other_player(ctx_t *ctx) {
 int coop_hud_hook(ctx_t *ctx, u32 target) {
     switch (target) {
     case FN_SHOW_WARNING:    return warn_both(ctx);
+    case FN_WARN_RESET:      return warn_reset_both(ctx);
     case FN_SHOW_MESSAGE:    return show_message(ctx);
     case FN_MSG_VOICE:
     case FN_MSG_SOUND_STOP:

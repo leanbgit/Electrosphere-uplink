@@ -234,8 +234,37 @@ static int clear_guest_alert(void) {
     return 0;                                       /* then runs as usual */
 }
 
+/* ---- the guest's hits ----------------------------------------------------------
+ * FN_DAMAGE_PASS turns each object's hits of the frame into damage. A hit
+ * from slot 0 (ENT_ATTACKER) takes the player's damage, a fixed amount per
+ * weapon; any other slot takes its enemy's damage from the AI's weapon
+ * records (gp+0x384), and slot 1 has none for guns: the guest's guns,
+ * the OSL among them, did nothing, and its missiles took whatever was there. So for the pass, a
+ * hit from slot 1 counts as the player's, and ENT_ATTACKER is put back after
+ * (the kill messages tell the players apart by it: coop_hud.c). */
+static int damage_as_player(ctx_t *ctx) {
+    u32 slots = MEM_R32(SLOT_TABLE);
+    if (!(G.live || G.took_over) || !ram_ptr(slots)) return 0;
+    u32 was[N_SLOTS] = {0};
+    for (u32 s = SLOT_FIRST_AIRCRAFT; s < N_SLOTS; s++) {
+        u32 e = slot_entity(slots, s);
+        if (!ram_ptr(e) || !(MEM_R32(e + ENT_HITS) & ENT_HITS_WEAPONS)) continue;
+        u32 a = MEM_R32(e + ENT_ATTACKER);
+        if ((a & 0x3Fu) != 1u) continue;
+        was[s] = a;
+        MEM_W32(e + ENT_ATTACKER, a & ~0x3Fu);
+    }
+    ac3_interpret(ctx, FN_DAMAGE_PASS);
+    for (u32 s = SLOT_FIRST_AIRCRAFT; s < N_SLOTS; s++) {
+        u32 e = slot_entity(slots, s);
+        if (was[s] && ram_ptr(e) && MEM_R32(e + ENT_ATTACKER) == (was[s] & ~0x3Fu)) MEM_W32(e + ENT_ATTACKER, was[s]);
+    }
+    return 1;
+}
+
 int coop_enemies_hook(ctx_t *ctx, u32 target) {
     switch (target) {
+    case FN_DAMAGE_PASS:     return damage_as_player(ctx);
     case FN_ACTIVATE_AIRCRAFT:
     case FN_ACTIVATE_GROUND: return activate_for_both(ctx, target);
     case FN_AI_PRE:

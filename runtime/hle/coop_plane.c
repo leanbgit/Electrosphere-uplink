@@ -44,7 +44,11 @@
 #define MODEL_PTR         (GAME_GP + 0x2DCu)  /* -> the player's model state: */
 #define MODEL_PARTS       0x08u         /*   -> parts table (word count, then one pointer per part) */
 #define MODEL_OBJECT      0x0Cu         /*   -> entry 1 */
-#define PART_LODS         3u            /* each part: +4, +8, +0xC: its three levels of detail */
+#define PART_LODS         3u
+#define FN_CAMERA_SET     0x800793C4u   /* (camera, mode, target entity): follow it */
+#define CAM_WORD          0x00u         /*   low 6 bits: the slot followed (switching views follows it again) */
+#define CAM_SKIP          0xC4u         /*   the slot not drawn (in the cockpit: the target), -1: none */
+#define CAM_TARGET        0xC8u         /*   the slot followed: drawn as "the player" (flag 2) */            /* each part: +4, +8, +0xC: its three levels of detail */
 
 #define EXT_FILE          0x80200000u   /* the guest's plane file, as read */
 #define EXT_FILE_MAX      0x40000u
@@ -57,6 +61,8 @@
 static struct {
     int queued, ready, to_bank;
     int plane;
+    int built;                    /* the guest's plane is taken apart in the extra memory, */
+    u32 host_parts, sounds;       /*   mapped for this host's parts table; its sounds (entry 3) */
     u32 parts, object;            /* the guest's parts table and entry 1 */
     u32 n;                        /* host pointer -> guest pointer */
     u32 from[MAP_MAX], to[MAP_MAX];
@@ -65,7 +71,7 @@ static struct {
 /* the host's plane file has been queued: queue the guest's after it */
 static int plane_load(ctx_t *ctx) {
     ac3_interpret(ctx, FN_PLANE_LOAD);
-    M.queued = M.ready = 0;
+    M.queued = M.ready = M.built = 0;
     M.n = 0;
     int plane = ac3_coop_guest_plane;
     if (plane < 0 || plane > 36 || plane == MEM_R16S(SCENE + SCENE_PLANE)) return 1;   /* the host's model will do */
@@ -96,10 +102,20 @@ static void map_add(u32 from, u32 to) {
 void coop_plane_guest_created(ctx_t *ctx) {
     M.ready = 0;
     coop_sound_guest_bank(0);                          /* none, unless the guest's plane file is here */
-    if (!M.queued) return;
+    u32 model = MEM_R32(MODEL_PTR);
+    if (!M.queued) {
+        /* "Restart mission" loads nothing again: the host's model and the
+         * guest's (already taken apart, its pictures in the second bank) are
+         * both still there. */
+        if (M.built && M.plane == ac3_coop_guest_plane && ram_ptr(model) && MEM_R32(model + MODEL_PARTS) == M.host_parts) {
+            coop_sound_guest_bank(M.sounds);
+            M.ready = 1;
+            printf("coop: guest's plane %d still loaded: used again\n", M.plane);
+        }
+        return;
+    }
     M.queued = 0;
     if (MEM_R16U(EXT_FILE) != 4u) { printf("coop: guest's plane file not read (yet)\n"); return; }
-    u32 model = MEM_R32(MODEL_PTR);
     if (!ram_ptr(model)) return;
     ctx_t saved = *ctx;
     call_guest(ctx, FN_RELOC, EXT_FILE, 0, 0, 0);
@@ -143,7 +159,9 @@ void coop_plane_guest_created(ctx_t *ctx) {
     }
     M.parts = parts;
     M.object = object;
-    M.ready = 1;
+    M.host_parts = hp;
+    M.sounds = e3;
+    M.ready = M.built = 1;
     printf("coop: guest's plane %d ready: %u parts (host %u), model %08X..%08X, %u pointers mapped, %u faces on the second bank\n",
            M.plane, count, hcount, EXT_MODEL, end, M.n, faces);
 }
@@ -162,7 +180,7 @@ static int player_draw(ctx_t *ctx) {
     u32 sp = ctx->r[29];
     u32 self = ctx->r[7], other = MEM_R32(sp + 0x10u);   /* a3: the player's record; stack: the other player's */
     ac3_interpret(ctx, FN_PLAYER_DRAW);
-    fix_record(G.replaying ? self : other, RECORD_LEN);
+    fix_record(G.replaying || G.took_over ? self : other, RECORD_LEN);   /* the guest's plane: "the player" in its replay, or after taking over */
     return 1;
 }
 
@@ -214,11 +232,35 @@ void coop_plane_patch_view(u32 ot_base, u32 entries) {
     }
 }
 
+/* The camera keeps its target as a slot number, taken from the target's
+ * handle. The guest's camera is set during the guest's update and view
+ * replay, where the guest is in slot 0 and the host in slot 1, but their
+ * handles still say 1 and 0. So the guest's camera ended up following "slot
+ * 1" (the host) as soon as it was set again (changing views, restarting the
+ * mission): the draw list then took the host for "the player", the guest's
+ * plane went to the other record and was drawn with the host's model (and
+ * in the cockpit view the host's plane was the one hidden). Slots 0 and 1
+ * are exchanged after each setting there, in the three places the camera
+ * keeps one (the next view switch follows the slot in its first word). */
+static int camera_set(ctx_t *ctx) {
+    u32 cam = ctx->r[4];
+    ac3_interpret(ctx, FN_CAMERA_SET);
+    if (!ram_ptr(cam)) return 1;
+    for (u32 o = CAM_SKIP; o <= CAM_TARGET; o += 4) {
+        u32 v = MEM_R32(cam + o);
+        if (v <= 1u) MEM_W32(cam + o, v ^ 1u);
+    }
+    u32 w = MEM_R32(cam + CAM_WORD);
+    if ((w & 0x3Fu) <= 1u) MEM_W32(cam + CAM_WORD, w ^ 1u);
+    return 1;
+}
+
 int coop_plane_hook(ctx_t *ctx, u32 target) {
+    if (target == FN_CAMERA_SET && G.live && (G.in_guest_update || G.replaying)) return camera_set(ctx);
     if (M.to_bank && target == FN_LOAD_IMAGE) return load_image(ctx);
     switch (target) {
     case FN_PLANE_LOAD:  return plane_load(ctx);
-    case FN_PLAYER_DRAW: return M.ready && G.live && player_draw(ctx);
+    case FN_PLAYER_DRAW: return M.ready && (G.live || G.took_over) && player_draw(ctx);
     }
     return 0;
 }

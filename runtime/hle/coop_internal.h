@@ -56,6 +56,8 @@ extern const coop_range_t coop_hud_static[N_HUD_STATIC];
 /* ---- state ---------------------------------------------------------------- */
 typedef struct {
     int dead;              /* destroyed this mission: spectating until the next one */
+    int took_over;         /* the host was shot down: the guest is "the player" until the mission ends,
+                              and the host (its copy in mine[]) is the one spectating */
     u32 deaths, last_mode, flight_table, last_update_field;
     int live;              /* guest aircraft exists in this flight */
     u32 handle;            /* its handle (slot 1) */
@@ -70,6 +72,7 @@ typedef struct {
     int hud_valid;
     u8  hud_lock[HUD_LOCK_LEN];
     u8  hud_rec[N_SLOTS][HREC_SIZE];
+    u8  hud_live[N_SLOTS];    /* each slot in use, as last seen (coop_hud_new_targets) */
     u8  hud_static[N_HUD_STATIC][0x480];
     u8  msg[MSG_STATE_LEN];  /* the other player's message on screen (BINGO, ...) */
     int quiet;             /* showing a message again on the other copy: no sound */
@@ -90,6 +93,7 @@ typedef struct {
     u32 ai_guest_group;    /* enemy AI: bit n = aircraft in slot n is the guest's this frame */
 } coop_state_t;
 extern coop_state_t coop_g;
+extern int ac3_pad_swap;   /* psyq_pad.c: 1 = controller 2 is read as controller 1 */
 #define G coop_g
 extern int coop_debug;     /* AC3_COOP_DEBUG: extra log lines */
 
@@ -132,6 +136,7 @@ int  coop_view_after_drawing(ctx_t *ctx);       /* the frame's last drawing call
 int  coop_view_skip_3d(u32 target);              /* 1: skip this 3D drawing call (host's replay) */
 /* coop_hud.c */
 void coop_hud_swap(void);
+void coop_hud_new_targets(void);
 void coop_threat_swap(void);
 int  coop_hud_hook(ctx_t *ctx, u32 target);
 int  coop_kill_messages(ctx_t *ctx, u32 target);  /* FN_AI_FIRST, FN_GROUND_DOWN */
@@ -140,6 +145,7 @@ void coop_message_log(void);
 int  coop_enemies_hook(ctx_t *ctx, u32 target);
 /* coop_mission.c */
 void coop_guest_hazards(ctx_t *ctx, u32 e);
+void coop_guest_warnings(ctx_t *ctx, u32 e);
 int  coop_mission_hook(ctx_t *ctx, u32 target);
 void coop_flash_swap(void);                     /* the guest's weapon-fire flash in/out */
 /* coop_plane.c */

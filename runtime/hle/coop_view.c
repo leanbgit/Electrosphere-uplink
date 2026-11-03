@@ -273,6 +273,13 @@ int coop_view_skip_3d(u32 target) {
 
 /* The flight frame's last drawing call: run it, then the guest's replay. */
 int coop_view_after_drawing(ctx_t *ctx) {
+    if (!G.replaying && G.took_over && ac3_guest_ra == RA_DRAW_LAST) {   /* the guest flies as the player: its HUD plane picture */
+        ac3_interpret(ctx, FN_DRAW_LAST);
+        u32 lo, hi, w = MEM_R32(WORLD_PTR);
+        if (draw_buffer(&lo, &hi) && ram_ptr(w))
+            coop_plane_patch_view(lo, (MEM_R32(w + WORLD_PACKETS0) - MEM_R32(w + WORLD_OT0)) / 4u);
+        return 1;
+    }
     if (G.replaying || ac3_guest_ra != RA_DRAW_LAST || !G.view_on) return 0;
     ac3_interpret(ctx, FN_DRAW_LAST);
     view_replay(ctx);

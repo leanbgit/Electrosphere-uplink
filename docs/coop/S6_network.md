@@ -85,6 +85,7 @@ text:
 | a mission, before the guest's plane joins | dimmed: "You join when <host> gets control of their plane" | normal |
 | flying | normal | normal |
 | the guest shot down | dimmed: "Shot down: watching <host> until the mission ends" | normal |
+| the host shot down, the guest flies on (S7_host_down.md) | "<host> was shot down. The mission is yours now!" for 5 s | dimmed: "Shot down: watching <guest> fly on until the mission ends" |
 
 While a game waits for the other player for over a second, both screens
 are dimmed with "Waiting for <name>... N s".

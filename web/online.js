@@ -298,12 +298,21 @@
   function phaseVeil(phase) {
     S.phase = phase;
     const other = S.peer || 'the other player';
-    if (S.role === 'host') return phase === 1 ? veil(`${other} is choosing a plane and weapons`, true) : veil('');
+    clearTimeout(S.veilTimer);
+    if (S.role === 'host') {
+      if (phase === 1) return veil(`${other} is choosing a plane and weapons`, true);
+      if (phase === 5) return veil(`Shot down: watching ${other} fly on until the mission ends`, true);
+      return veil('');
+    }
     switch (phase) {
     case 0: return veil(`${other} has the controls`, true);                         // menus, briefings, the host's hangar turn
     case 1: return veil('Your turn: choose your plane and weapons', false);
     case 3: return veil(`You join when ${other} gets control of their plane`, true);
     case 4: return veil(`Shot down: watching ${other} until the mission ends`, true);
+    case 5:                                                                           // the host was shot down: the guest flies on
+      veil(`${other} was shot down. The mission is yours now!`, false);
+      S.veilTimer = setTimeout(() => { if (S.phase === 5) veil(''); }, 5000);
+      return;
     default: return veil('');
     }
   }

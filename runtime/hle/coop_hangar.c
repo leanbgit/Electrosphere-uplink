@@ -56,7 +56,6 @@ static const struct { u32 field, len; } panel_arrays[] = { { 0x50u, 0x20u }, { 0
 #define HANGAR_CANCELLED  2
 #define HANGAR_LEAVE_STATE 5          /* leaving the weapon select (FN_HANGAR_LEAVE) */
 
-extern int ac3_pad_swap;                /* psyq_pad.c: 1 = controller 2 is read as controller 1 */
 
 static struct {
     int guest_turn;                     /* the guest is choosing */

@@ -27,6 +27,7 @@ int  ac3_coop_intercept(ctx_t *ctx, u32 target);   /* 1 = handled the call */
 #define AC3_COOP_PHASE_FLYING    2    /* both fly */
 #define AC3_COOP_PHASE_WAITING   3    /* a mission, before the guest's plane joins (when the host gets control) */
 #define AC3_COOP_PHASE_DOWN      4    /* the guest was shot down: watching until the mission ends */
+#define AC3_COOP_PHASE_HOST_DOWN 5    /* the host was shot down: the guest flies on as the player, the host watches */
 int  ac3_coop_phase(void);
 void ac3_coop_status(char *out, int cap);   /* one-line state, for logs */
 int  ac3_coop_replaying(void);

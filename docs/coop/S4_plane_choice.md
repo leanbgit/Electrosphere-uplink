@@ -118,24 +118,6 @@ byte-identical. Recordings made without a guest turn replay with
 
 The test page says whose turn it is (from the `coop: hangar:` log lines).
 
-**The guest's plane list looked empty** (user's online test, 2026-11-02):
-confirming the weapons plays a closing animation that hides the plane list's
-on-screen panels, and the guest's turn went straight back to the list. The
-panels are driven by a table (`[0x80112DC0]`: 16 panels, arrays at +0x50,
-+0x54, +0x58 and +0x5C; `0x800DEE08` shows or hides one). Now:
-
-- when the host confirms its plane, that table and the list's flags
-  (hangar +0x10..+0x17; bit 0 of +0x10 shows the plane's data) are saved;
-- after the host's commit they are put back, and the hangar goes back to the
-  list the game's own way after a cancelled weapon select (leaving = 2),
-  which shows the remaining panels and redraws the data;
-- a cancel in the guest's weapon select is left entirely to the game.
-
-Checked with the campaign recording `C2H`: the guest's list looks the same
-as the host's (plane picture, data with numbers, model name, performance
-chart, PREV/NEXT). Both computers stay identical, and two web runs in
-lockstep match them.
-
 ## Step C: the guest's own plane model (done, original graphics)
 
 `coop_plane.c`, plus two engine additions.
@@ -164,21 +146,12 @@ file as usual. When the guest is created, the file is taken apart as
 its pictures loaded (`0x800272F0`) with LoadImage sent to the second bank
 (same places as the host's: page (704, 256), colour tables (336, 312..319)),
 entries 0 and 1 decompressed (`0x800AFD08`) into the extra memory, the parts
-table relocated. Its sounds (entry 3) are played for the guest's ears only
-(S5_sound.md).
+table relocated. Not loaded: its sounds (the guest's plane sounds like the
+host's).
 
-The model's faces hold PS1 polygon words: a colour table halfword, then the
-texture page 4 bytes later (uv0 + colour table, uv1 + texture page). Faces
-are not all the same size (most are 0x18 bytes apart), so every halfword is
-checked: one whose colour table is the plane's (x 336, rows 312..319) and is
-followed by the plane's texture page is a face, and gets the bank bits (372
-faces for the F-22C; between 213 and 517 for the others). Every plane was
-checked: no face with the plane's colour tables is left unmarked (the one
-near-match in planes 1 and 12 is vertex data, not followed by a texture page).
-
-An earlier version jumped 0x24 bytes after each face it found, missing about
-half of them; those faces read the host's plane textures (a Geopelia flown
-next to an F/A-18 had blue patches).
+The model's faces are 0x24-byte records with PS1 polygon words: uv0 +
+colour table at `+0x0C`, uv1 + texture page at `+0x10`. Every face using the
+plane's page and colour tables gets the bank bits (191 faces for the F-22C).
 
 **Drawing.** `0x80067494` (from `0x80068334`, from `0x8003342C`) draws both
 players' planes from a list (16-byte items; slot 0 has flag 2, the other
@@ -196,32 +169,31 @@ the guest is drawn as the F-22C with its own colours in both views (matching
 the F-22C flown by the host on its own); host's and guest's computers
 byte-identical, extra memory and second bank included.
 
-**HD pictures (WebGPU).** The enhanced renderer runs in its own worker in
-the browser, fed one packet per field (`renderer/webgpu/hw_packet.h`). The
-bank goes with the next packet whenever it changes (`PKT_BANK`, normally
-once per mission, and again when the renderer starts) and becomes a fourth
-texture of the primitive shader (raw 16-bit texels, binding 3);
-`hw_prim.frag` reads texture pages and colour tables from it under the same
-bits. That part of the shader is built only for WebGPU
-(`tools/shaders_to_wgsl.py` defines `AC3_BANK`): co-op runs only in the
-browser build, so the native Vulkan renderer is unchanged.
+**Which record is the guest's** (2026-11-02). The list's flag 2 ("the
+player", the first record) goes to the slot the camera follows (camera
+`+0xC8`, `0x80067144`), and only when the view is external (camera `+0x50`
+bits 1..2); the cockpit view also hides the followed slot (`+0xC4`). The
+camera takes that slot from the target's handle (`0x800793C4`). The guest's
+camera is set during the guest's update and view replay, where the guest is
+in slot 0 but its handle says 1, so after the guest changed views (or the
+mission restarted) its camera followed the host: the guest's plane was drawn
+from the other record with the host's model. Slots 0 and 1 are now exchanged
+in the guest's camera after each setting (`camera_set`), in the three places
+it keeps one: `+0xC4`, `+0xC8` and the low bits of its first word (the next
+switch to the external view follows that one: `0x8007B674`; seen in the
+user's recording `CR`).
 
-**The HUD's plane picture.** A sprite (code `0x64..0x67`) with the plane
-file's HUD colour table (432, 509), which the guest's file also loaded into
-the bank. A sprite has no texture page of its own (it uses the drawing
-mode's), so for sprites the colour table's bank bit picks the bank for both
-(`psyq_gpu.c`, `draw_rect`). In the guest's view replay, before its picture
-is kept, that sprite gets the bit (`coop_plane_patch_view`); the replay's
-memory is thrown away, so only the guest's picture changes. Checked: the
-guest's HUD shows the F-22C, the host's the F-15S/MT; both computers
-byte-identical, memory the same as without the patch.
+**Restart mission** loads no files: the host's model and the guest's, already
+taken apart in the extra memory, are both still there, so the guest's is used
+again when the host's parts table is the same.
 
-**Different graphics settings on the two computers** stay in sync: the
-software renderer (which keeps the game's video memory) always runs and
-always has the bank; the HD renderer only makes the picture on screen.
+Checked on the user's recording `CV` (restart after a cockpit view): the
+guest keeps its model; both computers identical.
 
 ## Still to find
 
-- ~~The guest's plane sounds like the host's.~~ Done 2026-11-02: the
-  guest's engine and its plane's sounds play on the guest's computer, on a
-  second sound chip (S5_sound.md).
+- The HD and WebGPU renderers do not have the second bank yet: there the
+  guest's plane has its own shape but the host's textures.
+- The guest's plane sounds like the host's (its sounds are not loaded).
+- The HUD's small plane picture is drawn from the host's file in the guest's
+  view too.

@@ -57,6 +57,52 @@ thing at the start of the next frame (`DrawOTag`).
    game's VRAM each time except for the picture on screen (the game double
    buffers). Screens show the display copy.
 
+## New targets in the guest's HUD (2026-11-02)
+
+Each slot has a HUD record (`HUD_RECS`, 0x34 bytes) that decides its box and
+label; the guest has its own copies (`G.hud_rec`), taken from the host's when
+the guest is created. Objects that appear later (the enemies after a mission
+update, in slots that were free) get their record set up in the host's copy
+only, so the guest's copy kept an old object's or nothing: in the guest's
+view they had the wrong label (an earlier object's name, or none, where the
+host saw "TGT") or no box at all, and the guest could not lock on to them.
+The same stale records explain the words "ALERT" / "DAMAGE", and once the
+whole word sheet as one huge "box", seen in place of a box: a stale record had
+a class (`+2`) of 0x11 where only 1 (aircraft) and 2 (ground) exist, and the
+box and label come from tables indexed by it.
+
+`coop_hud_new_targets` (each frame before the guest's update):
+- copies the host's record into the guest's when a slot comes into use, or
+  when the host's record has the object's kind (`+3`) and the guest's
+  another;
+- and every frame copies the parts that describe the object rather than the
+  player's view of it: `+2..+5` and `+0x20..+0x23`. Over the whole of `TG`
+  they never differed otherwise, so this changes nothing in the normal
+  case.
+
+## Audit: what the host's side alone changes (2026-11-03)
+
+Logged every write into the per-player memory around a mission update
+(`TG`, fields 7,560..7,700: the HUD's arrays and radar blips, targeting and
+alert state, the HUD records, the player's block), and looked for writers
+that run only on the host's side (spawning, mission checker) rather than in
+each player's update or HUD:
+
+| Writer | What | Done |
+|---|---|---|
+| `0x8004E300` (an object appears) | HUD record `+2..+5` (class, kind) | copied to the guest's (above) |
+| same | radar blip colour (`BLIP_KIND`) | copied every frame: the new enemies were grey (unknown) on the guest's radar, now red |
+| `0x80042524` from the mission checker | clears the warning on screen | now clears the guest's too |
+| scene 0x2C's rule | PULL DOWN from the host's height | no longer shown to the guest (it gets its own) |
+| `0x8003809C` (AI pass) | clears the lock-on alert bit | already handled (`clear_guest_alert`) |
+| `0x800762D0` from the mission checker, at the update | the player's mode word (`block +0x28`) = 0x800, 4 | left alone: the host flies on normally with it; no effect on the guest seen. To keep in mind if a mission update ever behaves oddly for the guest |
+
+Everything else written there was each player's own update or HUD, or
+shared state (AI tables, slot flags) that both players use alike.
+Both computers identical on `TG` and `AL`. Checked on the
+user's recording `TG` (field 9,000: "B1C" without a box before, "R201 TGT"
+with its box after); both computers identical.
+
 ## Wrong turns (kept for the record)
 
 | Attempt | Why it failed |
@@ -87,4 +133,4 @@ thing at the start of the next frame (`DrawOTag`).
   co-op is off); not run in a browser yet.
 - Things drawn straight into VRAM outside `DrawOTag` during flight (if any)
   appear only in the game's VRAM.
-- Sound: each player hears its own (S5_sound.md, 2026-11-02).
+- Sound is the host's (engine, warnings): to do in Phase 3.

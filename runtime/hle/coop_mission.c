@@ -25,6 +25,17 @@ void coop_guest_hazards(ctx_t *ctx, u32 e) {
         call_guest(ctx, FN_HAZARD_DAMAGE, 0, 0, 0, 0);
 }
 
+/* Mission scene 0x2C (stay low): above 0xFFA00000 the rules show the PULL
+ * DOWN warning (FN_SHOW_WARNING 4) to slot 0; the guest gets its own during
+ * its update, while it is slot 0 with its HUD in. (Being seen: below.) */
+#define SCENE_STAY_LOW 0x2C
+void coop_guest_warnings(ctx_t *ctx, u32 e) {
+    u32 scene = MEM_R32(SCENE_PTR), w = MEM_R32(WORLD_PTR), m = MEM_R32(MISSION_STATE);
+    if (!ram_ptr(scene) || !ram_ptr(w) || !ram_ptr(m) || !ent_live(e)) return;
+    if (MEM_R16S(scene + SCENE_MISSION) != SCENE_STAY_LOW || MEM_R32(w + 8u) != 0u || (MEM_R32(m) & 1u)) return;
+    if (ent_y(e) < (s32)0xFFA00000) call_guest(ctx, FN_SHOW_WARNING, 4, 0, 0, 0);
+}
+
 /* ---- mission rules about where the player is --------------------------------
  * FN_MISSION_RULES (once per frame, from 0x800371C4) has, per mission scene
  * (SCENE_MISSION), checks on slot 0's position that move the mission on or
@@ -34,16 +45,31 @@ void coop_guest_hazards(ctx_t *ctx, u32 e) {
  *                 while the mission flag 2 (gp+0x340) is set, the same check
  *                 only tints the screen: left to each player's own view
  *     0x06        height < 0xFF600000
- *     0x2C        height < 0xFFA00000, or x and z inside a box
+ *     0x2C        while mission flag 1 is clear: height < 0xFF800000
+ *                 (higher than that): the player has been seen (flag 1, a
+ *                 script; above 0xFFA00000 a PULL DOWN warning first); x
+ *                 and z inside a box: arrived (flag 1, another script)
  *     0x17        |x| and |z| <= 0x0946FFFF and height > 0xFC400000
  *     0x37        z past 0x11D28000 (0x343F0000 when scene+0x394 is set)
- * (0x2A's checks are damage: coop_guest_hazards.) Both players must meet the
- * condition (climb to the height, reach the area, ...): when the host meets it
- * and the guest, still flying, does not, the rules run with the guest's
- * position in the host's entity for the call, so they see it unmet; the host's
- * position is put back afterwards unless the rules moved the host themselves.
- * A guest that was shot down no longer holds the team back. Everything else
- * the rules do stays the host's. */
+ * (0x2A's checks are damage: coop_guest_hazards.) Most are goals that both
+ * players must meet (climb to the height, reach the area, ...): when the host
+ * meets it and the guest, still flying, does not, the rules run with the
+ * guest's position in the host's entity for the call, so they see it unmet.
+ * 0x2C's height is a restriction (stay low): either player breaking it
+ * counts, so when the guest breaks it and the host does not, the rules run
+ * with the guest's position. The host's position is put back
+ * afterwards unless the rules moved the host themselves. A guest that was
+ * shot down no longer counts. Everything else the rules do stays the host's
+ * (the guest's warnings: coop_guest_warnings). */
+static int stay_low_checked(void) {   /* 0x2C's checks run: not seen yet, world +8 clear */
+    u32 w = MEM_R32(WORLD_PTR), m = MEM_R32(MISSION_STATE);
+    return ram_ptr(w) && ram_ptr(m) && MEM_R32(w + 8u) == 0u && !(MEM_R32(m) & 1u);
+}
+/* a restriction broken by e */
+static int mission_broken(s32 scene_no, u32 e) {
+    return scene_no == SCENE_STAY_LOW && stay_low_checked() && ent_y(e) < (s32)0xFF800000;
+}
+/* a goal met by e */
 static int mission_condition(s32 scene_no, u32 scene, u32 e) {
     s32 x = ent_x(e), y = ent_y(e), z = ent_z(e);
     u32 m = MEM_R32(MISSION_STATE);
@@ -51,8 +77,7 @@ static int mission_condition(s32 scene_no, u32 scene, u32 e) {
     case 0x0E: return y > (s32)0xFB1E0000 && !(ram_ptr(m) && (MEM_R32(m) & 2u));
     case 0x35: return y > (s32)0xFB1E0000;
     case 0x06: return y < (s32)0xFF600000;
-    case 0x2C: return y < (s32)0xFFA00000 ||
-                      ((u32)(x + 0x01F3FFFF) <= 0x07147FFEu && z > (s32)0xFB9B0000 && z <= 0x01387FFF);
+    case 0x2C: return stay_low_checked() && (u32)(x + 0x01F3FFFF) <= 0x07147FFEu && z > (s32)0xFB9B0000 && z <= 0x01387FFF;
     case 0x17: return (x < 0 ? -x : x) <= 0x0946FFFF && (z < 0 ? -z : z) <= 0x0946FFFF && y > (s32)0xFC400000;
     case 0x37: return MEM_R32(scene + SCENE_TWO_PLACES) ? z > 0x343F0000 : z > 0x11D28000;
     default:   return 0;
@@ -65,7 +90,8 @@ static int mission_rules_for_both(ctx_t *ctx) {
     u32 host = slot_entity(slots, 0), mine = slot_entity(slots, 1);
     if (!ram_ptr(host) || !ram_ptr(mine) || !ent_live(mine)) return 0;
     s32 no = (s32)MEM_R16S(scene + SCENE_MISSION);
-    if (!mission_condition(no, scene, host) || mission_condition(no, scene, mine)) return 0;
+    int broken = !mission_broken(no, host) && mission_broken(no, mine);
+    if (!broken && (mission_broken(no, host) || !mission_condition(no, scene, host) || mission_condition(no, scene, mine))) return 0;
     s32 host_pos[3], guest_pos[3];
     for (int c = 0; c < 3; c++) { host_pos[c] = ent_coord(host, c); guest_pos[c] = ent_coord(mine, c); }
     for (int c = 0; c < 3; c++) MEM_W32(host + ENT_POS + 4u * (u32)c, (u32)guest_pos[c]);
@@ -73,7 +99,8 @@ static int mission_rules_for_both(ctx_t *ctx) {
     int moved = 0;
     for (int c = 0; c < 3; c++) moved |= ent_coord(host, c) != guest_pos[c];
     if (!moved) for (int c = 0; c < 3; c++) MEM_W32(host + ENT_POS + 4u * (u32)c, (u32)host_pos[c]);
-    if (coop_debug > 0) printf("coop: field %u mission scene 0x%02X rule met by the host but not the guest\n", ac3_vblank_count(), (u32)no);
+    if (coop_debug > 0) printf("coop: field %u mission scene 0x%02X: %s\n", ac3_vblank_count(), (u32)no,
+                               broken ? "the guest broke a rule (the host did not)" : "rule met by the host but not the guest");
     return 1;
 }
 

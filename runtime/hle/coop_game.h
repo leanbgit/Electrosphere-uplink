@@ -42,6 +42,7 @@
 #define FN_AI_WEAPON         0x8004701Cu   /*   attacks */
 #define RA_KILL_AIRCRAFT     0x800467F0u   /* FN_AI_FIRST showing BINGO / BULLS EYE for an aircraft the player shot down */
 #define FN_GROUND_DOWN       0x800520C8u   /* (i): ground/ship object i of WEAPON_LIST, when it is destroyed */
+#define FN_DAMAGE_PASS       0x80045A40u   /* slots 2..63: the hits of the frame (ENT_HITS) -> ENT_HEALTH */
 #define RA_KILL_GROUND       0x80052238u   /*   ... showing BULLS EYE (or TARGETED) when the player destroyed it */
 #define FN_GROUND_WEAPON     0x80052FA8u   /* (i): ground/ship weapon i of WEAPON_LIST, once per frame */
 #define FN_LOCK_ALERT        0x800535D4u   /* (i): weapon i locking on; raises the lock-on alert half-way */
@@ -55,6 +56,7 @@
 /* HUD */
 #define FN_SHOW_WARNING      0x8004287Cu   /* (n): put warning n on screen, if more urgent than the current one */
 #define FN_PICK_WARNING      0x80042544u   /* the HUD's warning picker (calls FN_SHOW_WARNING) */
+#define FN_WARN_RESET        0x80042524u   /* clears the warning on screen (WARN_STATE), when the mission moves on */
 #define FN_PROJECT_TARGETS   0x8003B34Cu   /* targets (slots 2..63) onto the screen; leaves the GTE camera matrix set */
 #define FN_DRAW_LABELS       0x8003F520u   /* target boxes and labels */
 #define FN_DRAW_LABEL        0x80040740u   /* (kind, x, y): a label under a target, LABEL_* */
@@ -154,6 +156,8 @@
 #define ENT_KIND         0x48u   /* halfword: what it is */
 #define ENT_HEALTH       0x4Eu   /* halfword */
 #define ENT_ATTACKER     0x50u   /* handle of the last one to hit it (low 6 bits: its slot) */
+#define ENT_HITS         0x54u   /* this frame's hits: bits 0..5 guns, 6..14 missiles */
+#define ENT_HITS_WEAPONS 0x7FFFu
 #define   ENT_NO_MESSAGE 0x40u     /* (ENT_WORD) no kill message */
 #define   ENT_MESSAGE    0x80u     /* (ENT_WORD) a kill message */
 #define WPN_TARGET       0x5Bu   /* ground/ship weapons: target slot, 0xFF = none */
@@ -203,6 +207,9 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define SCENE_WEAPONS_LEN 3u     /*   slots); the player update reads them every frame */
 
 /* the player's mode */
+#define MODE_FLAGS       0x00u   /* the player's status word (FN_PLAYER_STATUS 0x8006CB30 returns it) */
+#define MODE_DOWN        0x7000u /*   set when the player is shot down (0x80073880); the mission checker
+                                    (0x800371C8, at 0x80037424) then ends the mission */
 #define MODE_STATE       0x04u   /* 1 = has control, 2 = mission intro */
 
 /* the player's aircraft state block */
@@ -241,6 +248,7 @@ static inline s32 ent_health(u32 e)    { return (s32)MEM_R16S(e + ENT_HEALTH); }
 #define HREC_FLAGS       0x0Cu   /* HREC_NEAR: near the player (distance under about 34,000) */
 #define   HREC_NEAR      0x80u
 #define   HREC_FULL_BOX  0x100u    /* FN_DRAW_BOX: a whole box (allies) rather than four corners */
+#define HREC_KIND        0x03u   /* byte: the object's kind (ENT_KIND), set up with the object; +2 its class (1 aircraft, 2 ground) */
 #define HREC_SHOWN       0x00u   /* byte: 0 not on screen; 1 shown (green, or the FRND colour) */
 #define HREC_BOX_SIZE    0x06u   /* halfwords: half the box's size, and its centre on screen */
 #define HREC_SCREEN_X    0x08u

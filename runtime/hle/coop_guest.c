@@ -213,6 +213,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     if (!G.live && (G.dead || !create_guest(ctx, slots))) return;
 
     /* swap in the guest */
+    coop_hud_new_targets();
     for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_out(ho_addr(i), G.keep[i], coop_host_only[i].len);
     for (unsigned i = 0; i < N_PER_PLAYER; i++) exchange(pp_addr(i), G.mine[i], coop_per_player[i].len);
     MEM_W32(slots, mine);
@@ -248,6 +249,7 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
         coop_sound_bank_swap();    /* and out */
         guest_targeting(ctx);
         coop_guest_hazards(ctx, mine);
+        coop_guest_warnings(ctx, mine);
     }
     if (coop_debug && G.updates % 30u == 0) debug_dump(slots);
     *ctx = saved;             /* the host's results (v0/v1) stand */
@@ -269,6 +271,54 @@ static void guest_update(ctx_t *ctx, const ctx_t *entry) {
     G.updates++;
 }
 
+/* The host was shot down this frame (its update set MODE_DOWN) while the
+ * guest flies: instead of the mission ending, the guest takes over as "the
+ * player" until the mission ends (docs/coop/S7_host_down.md).
+ *   - What the host's death did to the shared world is undone (the host-only
+ *     memory as it was before the host's update: camera effect, HUD, engine
+ *     sound, shot-down counter, shake).
+ *   - The guest is swapped in as for its update, but for good: its copy of
+ *     the player's memory, slot 0, its camera, HUD, incoming missiles, flash,
+ *     its plane's second object. The game sees a living player, so the
+ *     mission checker, the enemies and the scripts carry on.
+ *   - The host is now the one shot down (G.dead; its state is in G.mine), and
+ *     controller 2 is read as controller 1 (ac3_pad_swap) until the mission
+ *     ends (coop.c puts everything back). */
+static void take_over(const u8 before[][0x40]) {
+    u32 slots = MEM_R32(SLOT_TABLE);
+    u32 host = slot_entity(slots, 0), mine = slot_entity(slots, 1);
+    if (!ram_ptr(host) || !ram_ptr(mine) || !ram_ptr(pp_addr(PP_BLOCK))) return;
+    for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_in(ho_addr(i), before[i], coop_host_only[i].len);
+    for (unsigned i = 0; i < N_PER_PLAYER; i++) exchange(pp_addr(i), G.mine[i], coop_per_player[i].len);
+    MEM_W32(slots, mine);
+    MEM_W32(slots + 4, host);
+    /* The handles' slot bits too: the game finds an object from its handle
+     * (low 6 bits: its slot), e.g. the camera's target after a mission update
+     * (scene +0xC8) and the owner of each shot. With the guest's handle still
+     * saying slot 1, a mission update pointed the camera at the host's wreck:
+     * the minimap stopped and the plane drawn as "the player" lost the guest's
+     * model; and its shots counted as slot 1's. */
+    u32 hw = MEM_R32(host + ENT_WORD), gw = MEM_R32(mine + ENT_WORD);
+    MEM_W32(mine + ENT_WORD, (gw & ~0x3Fu) | (hw & 0x3Fu));
+    MEM_W32(host + ENT_WORD, (hw & ~0x3Fu) | (gw & 0x3Fu));
+    guest_camera_swap(host, mine);
+    coop_hud_swap();
+    coop_threat_swap();
+    coop_flash_swap();
+    u32 world = MEM_R32(WORLD_PTR);
+    if (G.shake_valid && ram_ptr(world)) copy_in(world + WORLD_SHAKE, G.shake, 8);
+    coop_plane_object_in();
+    G.took_over = 1;
+    G.live = 0;
+    G.dead = 1;
+    ac3_pad_swap = 1;
+    printf("coop: host shot down at field %u: the guest flies on as the player\n", ac3_vblank_count());
+}
+static u32 host_status(void) {
+    u32 mode = MEM_R32(PLAYER_MODE_PTR);
+    return ram_ptr(mode) ? MEM_R32(mode + MODE_FLAGS) : 0;
+}
+
 /* The game's player update: the host's as always, then the guest's, then a
  * snapshot for the guest's view (both computers: see coop_view.c). */
 int coop_player_update(ctx_t *ctx) {
@@ -279,13 +329,20 @@ int coop_player_update(ctx_t *ctx) {
     u32 world = MEM_R32(WORLD_PTR);
     if (ram_ptr(world)) copy_out(world + WORLD_SHAKE, G.shake_base, 8);   /* before either player's shake */
     u64 t0 = coop_now_ns();
+    u8 before[N_HOST_ONLY][0x40];
+    u32 was = 0;
+    if (G.live) {                        /* in case the host is shot down now */
+        for (unsigned i = 0; i < N_HOST_ONLY; i++) copy_out(ho_addr(i), before[i], coop_host_only[i].len);
+        was = host_status();
+    }
     coop_sound_before_host();
     ac3_interpret(ctx, FN_PLAYER_UPDATE);
     coop_sound_after_host();
     coop_prof_add(PROF_HOST_UPDATE, t0);
     ctx_t host_result = *ctx;
     u64 t1 = coop_now_ns();
-    guest_update(ctx, &entry);
+    if (G.live && !(was & MODE_DOWN) && (host_status() & MODE_DOWN)) take_over(before);
+    else guest_update(ctx, &entry);
     coop_prof_add(PROF_GUEST_UPDATE, t1);
     *ctx = host_result;
     u64 t2 = coop_now_ns();

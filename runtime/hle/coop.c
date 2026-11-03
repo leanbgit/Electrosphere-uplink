@@ -71,6 +71,11 @@ void ac3_coop_field(void) {
     }
     printf("coop: mission over at field %u (%s); guest aircraft %s\n", ac3_vblank_count(),
            left ? "left flight" : "next mission starting", G.live ? "removed" : "may fly again");
+    if (G.took_over) {        /* the guest flew on as the player: the host is the player again */
+        for (unsigned i = 0; i < N_PER_PLAYER; i++) exchange(pp_addr(i), G.mine[i], coop_per_player[i].len);
+        G.took_over = 0;
+        ac3_pad_swap = 0;
+    }
     G.live = 0;
     G.dead = 0;
 }
@@ -80,6 +85,7 @@ int ac3_coop_phase(void) {
     if (!ac3_coop_guest) return AC3_COOP_PHASE_OFF;
     if (ac3_coop_hangar_turn()) return AC3_COOP_PHASE_HANGAR;
     if (G.live) return AC3_COOP_PHASE_FLYING;
+    if (G.took_over) return AC3_COOP_PHASE_HOST_DOWN;
     int in_flight = G.last_update_field && ac3_vblank_count() - G.last_update_field <= 120u;
     if (in_flight) return G.dead ? AC3_COOP_PHASE_DOWN : AC3_COOP_PHASE_WAITING;
     return AC3_COOP_PHASE_HOST;

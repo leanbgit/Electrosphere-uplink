@@ -117,6 +117,8 @@ let fields = 0, lastFields = 0, lastT = 0, guestSeen = false;
 let guestLive = false, ownViews = 0, hostViews = 0, reportedHostView = false;
 // the guest's turn in the hangar: after player 1 confirms, controller 2 picks player 2's plane and weapons
 let hangarTurn = false;
+// player 1 was shot down: player 2 flies on as the player (runtime/hle/coop_guest.c, take_over)
+let hostDown = false;
 function tick() {
   if (!running) return;
   readSource($('src1').value, pad1);
@@ -168,7 +170,7 @@ $('start').onclick = async () => {
     log('Recording to ' + name + ' (offered for download when you press Stop)');
   }
   fields = 0; guestSeen = false; guestLive = false; reportedHostView = false; lastT = performance.now();
-  hangarTurn = false; delete $('ro1').dataset.turn;
+  hangarTurn = false; hostDown = false; delete $('ro1').dataset.turn;
   worker = new Worker('worker.js');
   worker.onmessage = e => {
     const m = e.data;
@@ -176,8 +178,8 @@ $('start').onclick = async () => {
     else if (m.type === 'frame2') {
       draw2(m); if (m.own) ownViews++; else if (guestLive) hostViews++;
       // no guest plane (not in the mission yet, or shot down): player 1's view, dimmed
-      $('v2').classList.toggle('watching', !m.own && !hangarTurn);
-      $('v1').classList.toggle('watching', hangarTurn);
+      $('v2').classList.toggle('watching', !m.own && !hangarTurn && !hostDown);
+      $('v1').classList.toggle('watching', hangarTurn || hostDown);
     }
     else if (m.type === 'log') { log(m.text); if (/^coop:/.test(m.text)) {
       const t = m.text.replace(/^coop:\s*/, '');
@@ -191,9 +193,13 @@ $('start').onclick = async () => {
       } else if (/^hangar: guest's plane/.test(t)) {
         hangarTurn = false; delete $('ro1').dataset.turn;
         $('ro2').textContent = 'plane picked: joins when player 1 gets control (around "Engage")';
+      } else if (/^host shot down/.test(t)) {
+        hostDown = true;
+        $('ro1').dataset.turn = 'shot down: player 2 flies on as the player (both screens show player 2 now)';
+        $('ro2').textContent = 'player 1 was shot down: flying on as the player (left and right show the same picture)';
       } else if (/created/.test(t)) { guestSeen = true; guestLive = true; reportedHostView = false; $('ro2').textContent = 'flying'; }
       else if (/destroyed/.test(t)) { guestLive = false; $('ro2').textContent = 'shot down: watching until the mission ends'; }
-      else if (/mission over/.test(t)) { guestLive = false; $('ro2').textContent = 'waiting for the next mission'; }
+      else if (/mission over/.test(t)) { guestLive = false; hostDown = false; delete $('ro1').dataset.turn; $('ro2').textContent = 'waiting for the next mission'; }
     } }
     else if (m.type === 'error') log(m.text, 'bad');
     else if (m.type === 'progress') status(`Starting: ${m.stage}${m.total > 1 ? ` ${Math.floor(m.done * 100 / m.total)}%` : ''}`);
