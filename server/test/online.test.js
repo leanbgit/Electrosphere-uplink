@@ -10,13 +10,14 @@ async function player(browser, name) {
   page.on('console', m => { if (m.type() === 'error') console.log(`[${name} console] ${m.text()}`); });
   page.on('pageerror', e => console.log(`[${name} error] ${e.message}`));
   await page.goto(URL);
-  await page.waitForFunction(() => self.crossOriginIsolated !== undefined);
+  await page.waitForFunction(() => self.uplink !== undefined);              // the page's modules are running
   await page.evaluate(n => {
-    gameData = { version: 'test', files: {} }; gameDataState = 'ready';   // stand-in for the streamed game data
+    uplink.app.gameData = { version: 'test', files: {} }; uplink.app.gameDataState = 'ready';   // stand-in for the streamed game data
     window.started = null;
-    window.startGame = async o => { window.on = o; window.started = { role: o.net.role, delay: o.net.delay, card: o.card ? o.card.length : null, gfx: o.gfx, ring: !!o.net.inbound }; return true; };
+    uplink.game.start = async o => { window.on = o; window.started = { role: o.net.role, delay: o.net.delay, card: o.card ? o.card.length : null, gfx: o.gfx, ring: !!o.net.inbound }; return true; };
     document.getElementById('on-name').value = n;
   }, name);
+  await page.click('#tab-online');                                             // the online panel is a tab
   return page;
 }
 const stateOf = p => p.evaluate(() => document.getElementById('on-state').textContent);
@@ -28,7 +29,7 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
   check(await host.evaluate(() => self.crossOriginIsolated), 'the page is cross-origin isolated (headers from _headers)');
 
   // a memory card on the host's side: it must reach the guest byte for byte
-  await host.evaluate(async () => { const c = new Uint8Array(131072); for (let i = 0; i < c.length; i++) c[i] = (i * 7 + 3) & 255; c[0] = 0x4D; c[1] = 0x43; await cardPut(0, c); });
+  await host.evaluate(async () => { const c = new Uint8Array(131072); for (let i = 0; i < c.length; i++) c[i] = (i * 7 + 3) & 255; c[0] = 0x4D; c[1] = 0x43; await uplink.cardPut(0, c); });
   // private room, joined with the code
   await host.click('#on-create');
   await host.waitForFunction(() => /^NEMO-/.test(document.getElementById('on-roomcode').textContent));

@@ -28,7 +28,7 @@ each side when the other leaves.
 Checked: `server/test/rooms.test.js`, 17 checks on Cloudflare's local
 runtime (`wrangler dev`).
 
-## The connection and the set-up (`web/online.js`)
+## The connection and the set-up (`web/page/online.js`)
 
 1. **Direct connection:** after the room server says both are in, the
    browsers connect directly (WebRTC data channel, reliable and ordered). The
@@ -47,7 +47,7 @@ runtime (`wrangler dev`).
    - Otherwise the guest answers "ready".
 4. **Start:** the host presses Start. The input delay comes from the median
    of 5 round trips: half of it plus 10 ms, in fields, plus 1, between 3 and
-   15. Both games then start (`startGame` in `app.js`) with:
+   15. Both games then start (`startGame` in `web/page/game.js`) with:
    - `net: {role, delay, inbound}`;
    - the host's card. The guest's game never saves to the guest's browser;
      the host's saves as usual;

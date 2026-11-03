@@ -68,7 +68,7 @@ globalThis.fetch = async (url, o) => {
   return new Response(fs.readFileSync(p), { headers: { 'Content-Type': 'application/wasm' } });
 };
 
-// ---- shared memory, exactly as app.js creates it
+// ---- shared memory, exactly as the page creates it (web/page/game.js)
 const ctrl = new Int32Array(new SharedArrayBuffer(16));
 const pad = new Int32Array(new SharedArrayBuffer(28));
 const pad2 = new Int32Array(new SharedArrayBuffer(28));

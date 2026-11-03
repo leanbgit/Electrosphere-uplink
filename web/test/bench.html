@@ -85,7 +85,7 @@
 const $ = id => document.getElementById(id);
 const log = t => { const l = $('log'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; };
 
-// effect bits: same as web/app.js and platform/web/web_platform.c
+// effect bits: same as web/page/graphics.js and platform/web/web_platform.c
 const B = { wide: 1, fx: 2, far: 4, ocean: 8, clouds: 16, forest: 32, atmo: 64, gi: 128, sun: 256, fog: 512 };
 const DEFAULT = 1 | 2 | 4 | 16 | 64 | 128 | 256 | 512;   // forests (32) removed
 const PASSES = [
