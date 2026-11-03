@@ -58,18 +58,17 @@ function renderFiles() {
   $('start').disabled = !ready || running;
   // always English (Project NEMO's patches ship with the site); a copy of the
   // site without them can only run the original Japanese text
-  $('enhint').textContent = !have.patch[1] ? 'This copy of the site is missing patches/CD1.xdelta, so the game will be in Japanese.'
+  if ($('enhint')) $('enhint').textContent = !have.patch[1] ? 'This copy of the site is missing patches/CD1.xdelta, so the game will be in Japanese.'
     : !have.patch[2] ? 'This copy of the site is missing patches/CD2.xdelta, so disc 2 will be in Japanese.' : '';
   // checklist and readouts
-  $('step-discs').classList.toggle('done', ready);
-  $('step-settings').classList.toggle('done', ready);
+  for (const id of ['step-discs', 'step-settings']) if ($(id)) $(id).classList.toggle('done', ready);
   $('ro-lang').textContent = have.patch[1] ? 'English' : 'Japanese';
   renderData();
   const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
   $('idle-hint').textContent = (ready ? '' : gameDataState === 'loading' ? 'Getting the game ready…' : 'The game data could not be loaded from this site (see the log).') +
     (touchOnly ? ' You will need a keyboard or a game controller: touch controls are not available yet.' : '');
 }
-$('forget').onclick = () => { if (!running) forgetAll(); };
+if ($('forget')) $('forget').onclick = () => { if (!running) forgetAll(); };
 
 // ------------------------------------------------------- streamed game data
 // The site hosts the game data (gamedata/manifest.json, written by
@@ -80,18 +79,14 @@ let gameData = null, gameDataState = 'loading', dataStatus = null;
 const dataWorker = new Worker('data-worker.js');
 const MB = n => (n / 1048576).toFixed(0);
 function renderData() {
-  const el = $('gd-status'), btn = $('gd-download');
-  if (!gameData) { el.textContent = gameDataState === 'loading' ? 'Checking…' : 'Not available on this copy of the site.'; btn.hidden = true; return; }
+  const el = $('gd-status');
+  if (!el) return;                                  // (a page without the game data line)
+  if (!gameData) { el.textContent = gameDataState === 'loading' ? 'Checking…' : 'Not available on this copy of the site.'; return; }
   const s = dataStatus;
-  if (!s) { el.textContent = 'Streamed from this site: nothing to select.'; btn.hidden = true; return; }
-  const all = s.have === s.total;
-  el.textContent = !s.stored ? 'Streamed from this site: nothing to select. (This browser cannot store it, so it is downloaded again on each visit.)'
-    : s.full ? `Streamed from this site: nothing to select. This browser's storage is full after ${MB(s.bytesHave)} of ${MB(s.bytesTotal)} MB; the rest is downloaded when needed.`
-    : all ? `Streamed from this site and fully stored in this browser (${MB(s.bytesTotal)} MB): starts and plays without waiting.`
-    : `Streamed from this site: nothing to select. Stored in this browser: ${MB(s.bytesHave)} of ${MB(s.bytesTotal)} MB` +
-      (s.background ? ' (downloading in the background).' : '. The rest downloads while you play.');
-  btn.hidden = !s.stored || all || s.full;
-  btn.textContent = s.background ? 'Pause download' : 'Download all now';
+  // streamed only: the game fetches the parts it reads (kept in this browser's
+  // cache for next time); there is no "download everything"
+  el.textContent = !s || !s.bytesHave ? 'Streamed from this site: nothing to select.'
+    : `Streamed from this site. Kept in this browser for faster starts: ${MB(s.bytesHave)} MB.`;
 }
 dataWorker.onmessage = e => {   // (renderData also runs from renderFiles)
   const m = e.data;
@@ -106,10 +101,6 @@ dataWorker.onmessage = e => {   // (renderData also runs from renderFiles)
 };
 dataWorker.onerror = () => { gameDataState = 'none'; renderFiles(); renderData(); };
 dataWorker.postMessage({ type: 'init', url: 'gamedata/manifest.json' });
-$('gd-download').onclick = () => {
-  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-  dataWorker.postMessage({ type: dataStatus && dataStatus.background ? 'pause' : 'download' });
-};
 
 // ------------------------------------------------------------------- saves
 const DB = 'ac3online', STORE = 'cards';   // storage name from the project's first name; kept so saves and English data survive
@@ -528,7 +519,7 @@ async function startGame(onlineSession) {
   worker.onmessage = async e => {
     const m = e.data;
     if (m.type === 'frame') { if (m.buf) latest = m; frames++;
-      if (m.seq === 1 || frames === 1) { loader.hide('game'); if (remote) dataWorker.postMessage({ type: 'download' }); }   // then fill the browser's copy while playing
+      if (m.seq === 1 || frames === 1) loader.hide('game');
       const t = performance.now(); if (t - lastFpsT > 1000) { $('fps').textContent = `${Math.round(frames * 1000 / (t - lastFpsT))} fps`; frames = 0; lastFpsT = t; } }
     else if (m.type === 'log') log(m.text);
     else if (m.type === 'progress') loaderStage(m.stage, m.disc, m.done, m.total);

@@ -56,7 +56,7 @@ async function loadRemembered() {
 // ---------------------------------------------------------------- input
 const BTN = { SELECT: 1, L3: 2, R3: 4, START: 8, UP: 16, RIGHT: 32, DOWN: 64, LEFT: 128,
   L2: 256, R2: 512, L1: 1024, R1: 2048, TRIANGLE: 4096, CIRCLE: 8192, CROSS: 16384, SQUARE: 32768 };
-// The main page's default keys (web/app.js KEY_ACTIONS).
+// The main page's default keys (web/page/input.js KEY_ACTIONS).
 const KEYS = { KeyW: 'STICK_UP', KeyS: 'STICK_DOWN', KeyA: 'STICK_LEFT', KeyD: 'STICK_RIGHT',
   ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
   KeyX: 'CROSS', KeyC: 'CIRCLE', KeyZ: 'SQUARE', KeyV: 'TRIANGLE',

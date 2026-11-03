@@ -54,7 +54,7 @@ compile() {  # src extra-flags...
 
 objs=()
 HD_SRC=()
-[ "$HD" = 1 ] && HD_SRC=(renderer/hw/hw.c renderer/hw/hw_glue.c renderer/hw/hw_world.c renderer/hw/hw_settings.c renderer/webgpu/hw_fx_game.c renderer/webgpu/hw_packet.c renderer/webgpu/hw_ocean_web.c)
+[ "$HD" = 1 ] && HD_SRC=(renderer/hw/hw.c renderer/hw/hw_glue.c renderer/hw/hw_glue_fog.c renderer/hw/hw_glue_ops.c renderer/hw/hw_glue_diag.c renderer/hw/hw_record.c renderer/hw/hw_world.c renderer/hw/hw_settings.c renderer/webgpu/hw_fx_game.c renderer/webgpu/hw_packet.c renderer/webgpu/hw_ocean_web.c)
 for f in runtime/*.c runtime/hle/*.c platform/web/*.c host/*.c "${HD_SRC[@]}"; do
   # the debug oracle's frame stepper calls recompiled functions by name
   if [ "$MODE" = public ] && [ "$f" = runtime/hle/ac3_oracle_frame.c ]; then continue; fi
@@ -92,8 +92,9 @@ if [ "$HD" = 1 ]; then
   cp web/test/bench.html "$OUT/"     # development: speed test on your own GPU (not part of site/)
 fi
 
-cp web/index.html web/style.css web/app.js web/worker.js web/data-worker.js web/netplay.js web/online.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
+cp web/index.html web/style.css web/worker.js web/data-worker.js web/netplay.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
 cp web/test/coop.html web/test/coop.js web/test/coop.css "$OUT/"         # development: local co-op test page (not part of site/)
+mkdir -p "$OUT/page" && cp web/page/*.js "$OUT/page/"            # the page's modules (index.html)
 mkdir -p "$OUT/fonts" && cp web/fonts/* "$OUT/fonts/"
 # Project NEMO's English patches (included with their permission)
 if [ -f web/patches/CD1.xdelta ]; then mkdir -p "$OUT/patches" && cp web/patches/CD?.xdelta "$OUT/patches/"; fi
@@ -106,10 +107,12 @@ fi
 if [ "$MODE" = public ] && [ "$HD" = 1 ]; then
   # everything but the game data (site/gamedata/, added by hand: see below)
   mkdir -p site && find site -mindepth 1 -maxdepth 1 ! -name gamedata -exec rm -rf {} + && mkdir -p site/fonts
-  cp "$OUT"/{index.html,style.css,app.js,worker.js,data-worker.js,netplay.js,online.js,audio-worklet.js,coi-boot.js,coi-sw.js,_headers,ac3.js,ac3.wasm,render-worker.js,render.js,render.wasm} site/
+  cp -r "$OUT/page" site/
+  cp "$OUT"/{index.html,style.css,worker.js,data-worker.js,netplay.js,audio-worklet.js,coi-boot.js,coi-sw.js,_headers,ac3.js,ac3.wasm,render-worker.js,render.js,render.wasm} site/
   # the website: test hooks off (DEV), so pages cannot pass test-bench options
-  sed -i 's/^const DEV = true; /const DEV = false;/' site/app.js site/worker.js site/render-worker.js
-  grep -q '^const DEV = false;' site/app.js && grep -q '^const DEV = false;' site/worker.js && grep -q '^const DEV = false;' site/render-worker.js \
+  sed -i 's/^const DEV = true; /const DEV = false;/' site/worker.js site/render-worker.js
+  sed -i 's/^export const DEV = true; /export const DEV = false;/' site/page/common.js
+  grep -q '^export const DEV = false;' site/page/common.js && grep -q '^const DEV = false;' site/worker.js && grep -q '^const DEV = false;' site/render-worker.js \
     || { echo "ERROR: could not turn the test hooks off in site/"; exit 1; }
   cp web/fonts/* site/fonts/
   # Project NEMO's English patches (permission granted): web/patches/CD1.xdelta, CD2.xdelta

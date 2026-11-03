@@ -5,7 +5,7 @@ for online co-op (`/api/ws`, `src/index.js`). The rooms are kept in one
 Durable Object (SQLite-backed, which the free plan allows).
 
 The room server only introduces the two browsers. The game itself goes
-directly between them over WebRTC (`web/online.js`, `web/netplay.js`,
+directly between them over WebRTC (`web/page/online.js`, `web/netplay.js`,
 `docs/coop/S6_network.md`).
 
 ## Publish
@@ -49,5 +49,5 @@ playwright`):
 - **No relay (TURN) yet.** Two browsers that cannot reach each other
   directly (some strict home routers, many mobile and university networks)
   don't connect, and the page says so. A relay can be added later in
-  `web/online.js` (`ICE`) without other changes.
+  `web/page/online.js` (`ICE`) without other changes.
 - **One lobby** for all rooms. That's plenty for this site.

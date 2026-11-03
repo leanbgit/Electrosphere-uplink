@@ -9,14 +9,16 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
-  <header class="masthead">
+<header class="sky">
+  <div class="wrap sky-inner">
     <h1 class="wordmark">Electrosphere <span>Uplink</span></h1>
-    <p class="tagline">Play the Japanese release of Ace Combat 3: Electrosphere in your browser!</p>
-  </header>
+    <p class="tagline">Ace Combat 3: Electrosphere, the Japanese release in English, in your browser. Alone or with a wingman.</p>
+  </div>
+</header>
+<div class="wrap">
 
   <main class="deck">
-    <section aria-label="Game screen">
+    <section class="screen" aria-label="Game screen">
       <div class="bezel"><span class="mk" aria-hidden="true"></span>
         <div id="screen-wrap">
           <canvas id="screen" width="320" height="240" aria-label="Game screen"></canvas>
@@ -57,6 +59,7 @@
             <button class="play" id="start" disabled aria-describedby="idle-hint">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg><span>Play</span>
             </button>
+            <button class="ghost" id="to-online">Play online with a friend</button>
             <p class="idle-hint" id="idle-hint"></p>
           </div>
         </div>
@@ -74,30 +77,16 @@
         <label class="check flush sd-only"><input type="checkbox" id="smooth"> Smooth scaling</label>
         <p class="note status" id="status" role="status"></p>
       </div>
-      <section class="controls" aria-labelledby="h-keys">
-        <div class="controls-head">
-          <h2 id="h-keys">Controls</h2>
-          <button class="quiet small" id="keys-reset">Default keys</button>
-        </div>
-        <p class="note">Click a key to change it, then press the new key (Esc cancels). Your keys are remembered in this browser.
-          Any standard game controller works too: press a button on it once the game is running.</p>
-        <div class="keygrid" id="keygrid"></div>
-      </section>
     </section>
 
-    <aside class="checklist" aria-label="Setup">
-      <h2>Pre-flight check</h2>
-      <p>First visit only. Your browser remembers everything for next time.</p>
-      <ol class="steps">
-        <li class="step" id="step-discs">
-          <h3 id="gd-title">Game data</h3>
-          <p class="note" id="gd-status"></p>
-          <button class="quiet compact" id="gd-download" hidden>Download all now</button>
-          <button class="quiet compact" id="forget">Forget stored game data</button>
-          <p class="note" id="enhint"></p>
-        </li>
-        <li class="step" id="step-settings">
-          <h3>Settings</h3>
+    <aside class="console" aria-label="Setup and online play">
+      <div class="tabs" role="tablist" aria-label="Panels">
+        <button role="tab" class="tab" id="tab-setup" aria-selected="true" aria-controls="panel-setup">Settings</button>
+        <button role="tab" class="tab" id="tab-online" aria-selected="false" aria-controls="panel-online" tabindex="-1">Play online <span class="badge">2 players</span></button>
+      </div>
+      <div class="panel" id="panel-setup" role="tabpanel" aria-labelledby="tab-setup">
+        <p class="panel-lede">Remembered in this browser for next time.</p>
+        <div class="settings">
           <div class="set-group">
             <div class="row">
               <label>Graphics <select id="gfx" aria-describedby="gfxhint">
@@ -132,16 +121,18 @@
             <p>Card 1 lives in this browser. Keep a copy, or bring a save from an emulator or a DexDrive (.mcd, .mcr or .gme).</p>
             <div class="row"><button class="quiet small" id="export">Download card</button><button class="quiet small" id="importbtn">Load a card file</button><button class="quiet small" id="restorecard" hidden>Restore previous card</button><input type="file" id="import" accept=".mcd,.mcr,.gme" hidden></div>
           </div>
-        </li>
-        <li class="step" id="step-online">
-          <h3>Play online together <span class="sub">(two players)</span></h3>
+        </div>
+      </div>
+      <div class="panel" id="panel-online" role="tabpanel" aria-labelledby="tab-online" hidden>
+        <div id="step-online">
+          <h2 class="panel-title">Play online together</h2>
           <p>Each player on their own computer. The host's memory card and settings are used, and nothing is saved on the guest's side. The guest flies as the second plane.</p>
           <div class="row">
             <label>Your name <input id="on-name" maxlength="24" size="12" autocomplete="nickname"></label>
             <label class="check flush"><input type="checkbox" id="on-public"> Public room <span class="sub">(listed; you accept who joins)</span></label>
           </div>
           <div id="on-idle">
-            <div class="row"><button class="quiet small" id="on-create">Create a room</button></div>
+            <div class="row"><button class="small" id="on-create">Create a room</button></div>
             <div class="row">
               <label>Room code <input id="on-code" placeholder="NEMO-XXXX" maxlength="9" size="10" autocomplete="off" spellcheck="false"></label>
               <button class="quiet small" id="on-join">Join</button>
@@ -155,9 +146,18 @@
             <div class="row"><button class="small" id="on-go" hidden>Start the game</button><button class="quiet small" id="on-leave">Leave</button></div>
           </div>
           <p class="note" id="on-state" role="status"></p>
-        </li>
-      </ol>
+        </div>
+      </div>
     </aside>
+    <section class="controls" aria-labelledby="h-keys">
+        <div class="controls-head">
+          <h2 id="h-keys">Controls</h2>
+          <button class="quiet small" id="keys-reset">Default keys</button>
+        </div>
+        <p class="note">Click a key to change it, then press the new key (Esc cancels). Your keys are remembered in this browser.
+          Any standard game controller works too: press a button on it once the game is running.</p>
+        <div class="keygrid" id="keygrid"></div>
+      </section>
   </main>
 
   <div class="lower">
@@ -170,6 +170,7 @@
 
   <details class="diag">
     <summary>Diagnostics</summary>
+    <p class="note">The game data the site streams is kept in this browser for faster starts. <button class="quiet small" id="forget">Forget stored game data</button></p>
     <div id="log" role="log"></div>
   </details>
 
@@ -178,8 +179,7 @@
     <p>Fonts: Barlow and Barlow Condensed by Jeremy Tribby, SIL Open Font License (<a href="fonts/OFL.txt">licence</a>).</p>
   </footer>
 </div>
-<script src="app.js"></script>
 <script src="netplay.js"></script>
-<script src="online.js"></script>
+<script type="module" src="page/main.js"></script>
 </body>
 </html>

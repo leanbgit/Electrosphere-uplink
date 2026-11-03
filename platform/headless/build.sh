@@ -23,7 +23,8 @@ if [ "$HD" = 1 ]; then
       https://raw.githubusercontent.com/emscripten-core/emscripten/3.1.52/system/include/webgpu/webgpu.h
   fi
   CFLAGS="$CFLAGS -DAC3_ENHANCED -DAC3_HW_WEBGPU -I$OUT/include -Irenderer -Irenderer/hw -Irenderer/webgpu"
-  HD_SRC=(renderer/hw/hw.c renderer/hw/hw_glue.c renderer/hw/hw_world.c renderer/hw/hw_settings.c
+  HD_SRC=(renderer/hw/hw.c renderer/hw/hw_glue.c renderer/hw/hw_glue_fog.c renderer/hw/hw_glue_ops.c
+          renderer/hw/hw_glue_diag.c renderer/hw/hw_record.c renderer/hw/hw_world.c renderer/hw/hw_settings.c
           renderer/webgpu/hw_fx_game.c renderer/webgpu/hw_packet.c renderer/webgpu/hw_ocean_web.c)
 fi
 mkdir -p "$OBJ"

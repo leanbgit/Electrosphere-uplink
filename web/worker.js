@@ -3,7 +3,7 @@
 // Why a worker: the recompiled game has its own endless main loop and waits for
 // each video field. A worker may block; the page's main thread may not.
 //
-// Shared memory with the page (SharedArrayBuffers created by app.js):
+// Shared memory with the page (SharedArrayBuffers created by web/page/game.js):
 //   ctrl  Int32Array: [0] quit flag, [1] audio running flag, [2] sleep cell
 //   hd.done Int32Array: [0] last field the render worker's GPU has finished
 // Enhanced graphics: fields go to web/render-worker.js through hd.port.
