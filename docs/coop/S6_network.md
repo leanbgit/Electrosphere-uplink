@@ -1,6 +1,7 @@
 # S6: playing online
 
-Two players, each on their own computer with their own discs. The host
+Two players, each on their own computer, both playing the game data the site
+streams (`web/data-worker.js`). The host
 creates a room and shares its code, or makes it public. The guest joins, and
 both games start together from power-on with the host's memory card and the
 host's graphics settings. From then on only the two controllers travel
@@ -33,10 +34,11 @@ runtime (`wrangler dev`).
    browsers connect directly (WebRTC data channel, reliable and ordered). The
    STUN servers are Cloudflare's and Google's. There is no relay yet: if no
    direct path exists, the page says so after 20 s.
-2. **Hello** (text messages): each side sends its site version, which discs
-   it has, the language, and whether it has WebGPU. The host refuses a guest
-   with a different version, no disc 1, a missing disc 2 (when the host has
-   it) or a different language.
+2. **Hello** (text messages): each side sends its site version, the version
+   of the streamed game data (`gamedata/manifest.json`), the language, and
+   whether it has WebGPU. The host refuses a guest with a different site
+   version, different game data or a different language. (Players can no
+   longer use their own disc files, so both run exactly the same data.)
 3. **Set-up:** the host sends its graphics settings (resolution and option
    bits) and its memory card (base64, 128 KB).
    - The guest refuses if the host plays Enhanced with widescreen or
@@ -69,7 +71,7 @@ headless Chromium against `wrangler dev`:
 - game records go both ways;
 - the goodbye reaches the other game.
 
-The game itself can't start there (no discs), so the page's start function is
+The game itself can't start there (no game data), so the page's start function is
 replaced by a stand-in.
 
 ## Who has the controls (on the game screen)

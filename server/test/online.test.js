@@ -12,7 +12,7 @@ async function player(browser, name) {
   await page.goto(URL);
   await page.waitForFunction(() => self.crossOriginIsolated !== undefined);
   await page.evaluate(n => {
-    have.disc[1] = { file: new File([new Uint8Array(16)], 'd1.bin'), src: 'selected' };   // stand-in disc
+    gameData = { version: 'test', files: {} }; gameDataState = 'ready';   // stand-in for the streamed game data
     window.started = null;
     window.startGame = async o => { window.on = o; window.started = { role: o.net.role, delay: o.net.delay, card: o.card ? o.card.length : null, gfx: o.gfx, ring: !!o.net.inbound }; return true; };
     document.getElementById('on-name').value = n;

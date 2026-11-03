@@ -6,7 +6,7 @@
 // 2. The two browsers then connect directly (WebRTC data channel; the room
 //    server only passes the connection offers along). No relay yet: some
 //    networks cannot connect directly, and the page says so.
-// 3. They check they can play together (same site version, same discs, the
+// 3. They check they can play together (same site version, same game data, the
 //    guest's browser can use the host's graphics), the host sends its memory
 //    card and graphics settings, and both games start from power-on, in
 //    lockstep (web/netplay.js). The host is controller 1, the guest
@@ -36,9 +36,9 @@
     el('on-go').hidden = S.role !== 'host';
     el('on-go').disabled = !S.ready || S.started;
   }
-  function needDiscs() {
-    if (have.disc[1]) return false;
-    state('Add your game discs in the pre-flight check first.', 'bad');
+  function needDiscs() {          // the game data, streamed from the site (app.js)
+    if (gameData) return false;
+    state(gameDataState === 'loading' ? 'The game data is still loading: try again in a moment.' : 'The game data is not available on this site.', 'bad');
     return true;
   }
 
@@ -193,7 +193,7 @@
     dc.onopen = async () => {
       clearTimeout(S.timer);
       state(`Connected to ${S.peer}. Checking that you can play together…`);
-      send({ t: 'hello', version: await version(), discs: [!!have.disc[1], !!have.disc[2]],
+      send({ t: 'hello', version: await version(), data: gameData ? gameData.version : null,
              english: !!have.patch[1], gpu: !!navigator.gpu });
       for (let i = 0; i < 5; i++) setTimeout(() => send({ t: 'ping', at: performance.now() }), 200 * i);
     };
@@ -219,7 +219,7 @@
       S.hello = m;
       if (S.role !== 'host') break;
       const problem = m.version !== await version() ? 'a different version of the site'
-        : !m.discs[0] ? 'no disc 1' : (have.disc[2] && !m.discs[1]) ? 'no disc 2'
+        : m.data !== (gameData && gameData.version) ? 'different game data'
         : m.english !== !!have.patch[1] ? 'a different language' : '';
       if (problem) { send({ t: 'refuse', why: `Your copy has ${problem}.` }); state(`${S.peer} cannot play: ${problem}.`, 'bad'); break; }
       const card = await cardGet(0);

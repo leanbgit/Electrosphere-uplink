@@ -26,6 +26,47 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 DEV_PAGES = {'bench.html', 'hdtest.html'}
 
 
+class RangeHandler(Handler):
+    """Single byte ranges ("Range: bytes=a-b"), as web hosts serve them: the
+    streamed game data (gamedata/) fetches small parts of its 4 MiB pieces."""
+    def send_head(self):
+        rng = self.headers.get('Range', '')
+        path = self.translate_path(self.path)
+        if not rng.startswith('bytes=') or not os.path.isfile(path):
+            return super().send_head()
+        size = os.path.getsize(path)
+        try:
+            a_s, b_s = rng[6:].split(',')[0].strip().split('-', 1)
+            if a_s == '':                                   # the last N bytes
+                a, b = max(0, size - int(b_s)), size - 1
+            else:
+                a = int(a_s)
+                b = min(size - 1, int(b_s)) if b_s else size - 1
+        except ValueError:
+            return super().send_head()
+        if a >= size or b < a:
+            self.send_response(416); self.send_header('Content-Range', f'bytes */{size}'); self.end_headers(); return None
+        f = open(path, 'rb'); f.seek(a)
+        self._range_left = b - a + 1
+        self.send_response(206)
+        self.send_header('Content-Type', self.guess_type(path))
+        self.send_header('Content-Range', f'bytes {a}-{b}/{size}')
+        self.send_header('Content-Length', str(b - a + 1))
+        self.send_header('Accept-Ranges', 'bytes')
+        self.end_headers()
+        return f
+
+    def copyfile(self, source, outputfile):
+        left = getattr(self, '_range_left', None)
+        if left is None:
+            return super().copyfile(source, outputfile)
+        self._range_left = None
+        while left > 0:
+            buf = source.read(min(65536, left))
+            if not buf: break
+            outputfile.write(buf); left -= len(buf)
+
+
 def site_headers():
     """The '/*' block of _headers (what the real host sends), so that local
     tests run under the same Content-Security-Policy as the website."""
@@ -53,4 +94,4 @@ SITE_HEADERS = site_headers()
 print(f'Serving {os.getcwd()} on http://localhost:{PORT}  (Ctrl+C to stop)')
 if '--no-browser' not in sys.argv:
     webbrowser.open(f'http://localhost:{PORT}/')
-http.server.ThreadingHTTPServer(('127.0.0.1', PORT), Handler).serve_forever()
+http.server.ThreadingHTTPServer(('127.0.0.1', PORT), RangeHandler).serve_forever()

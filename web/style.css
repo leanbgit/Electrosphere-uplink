@@ -221,3 +221,10 @@
   .check.flush { margin: 0; }
   .quiet.compact { padding: 6px 12px; font-size: 14px; }
   #forget { margin-top: 6px; }
+
+  /* game data step: the disc picker is an option when the site streams the game */
+  .gd-own { margin-top: 10px; }
+  .gd-own summary { cursor: pointer; font-size: 15px; color: var(--ink-soft); }
+  .gd-own[open] summary { margin-bottom: 6px; }
+  #gd-own.always > summary { display: none; }
+  #gd-download { margin: 2px 0 4px; }

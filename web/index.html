@@ -90,13 +90,10 @@
       <p>First visit only. Your browser remembers everything for next time.</p>
       <ol class="steps">
         <li class="step" id="step-discs">
-          <h3>Game discs</h3>
-          <p>Both discs of the Japanese release (SLPS-02020 and SLPS-02021), as .bin images.</p>
-          <div id="drop">Drop the files here or <label class="pickbtn" for="pick">choose them</label><input type="file" id="pick" multiple></div>
-          <ul class="files" id="files"></ul>
-          <label class="check"><input type="checkbox" id="remember" checked> Remember the discs in this browser (uses about 1.4 GB)</label>
-          <p class="note" id="storeprog"></p>
-          <button class="quiet compact" id="forget">Forget remembered files</button>
+          <h3 id="gd-title">Game data</h3>
+          <p class="note" id="gd-status"></p>
+          <button class="quiet compact" id="gd-download" hidden>Download all now</button>
+          <button class="quiet compact" id="forget">Forget stored game data</button>
           <p class="note" id="enhint"></p>
         </li>
         <li class="step" id="step-settings">
@@ -138,7 +135,7 @@
         </li>
         <li class="step" id="step-online">
           <h3>Play online together <span class="sub">(two players)</span></h3>
-          <p>Each player on their own computer, with their own discs. The host's memory card and settings are used, and nothing is saved on the guest's side. The guest flies as the second plane.</p>
+          <p>Each player on their own computer. The host's memory card and settings are used, and nothing is saved on the guest's side. The guest flies as the second plane.</p>
           <div class="row">
             <label>Your name <input id="on-name" maxlength="24" size="12" autocomplete="nickname"></label>
             <label class="check flush"><input type="checkbox" id="on-public"> Public room <span class="sub">(listed; you accept who joins)</span></label>
@@ -166,8 +163,8 @@
   <div class="lower">
     <section aria-labelledby="h-about">
       <h2 id="h-about">About</h2>
-      <p>A fan project: the game's own program, from your disc, runs on a recreation of the PlayStation's system libraries compiled for the web.</p>
-      <p>The English text is Project NEMO's fan translation (v0.9b3). Discs and saves you add stay in this browser on this computer.</p>
+      <p>A free, non-commercial fan project: the game's own program runs on a recreation of the PlayStation's system libraries compiled for the web.</p>
+      <p>The English text is Project NEMO's fan translation (v0.9b3). Your saves, settings and the downloaded game data stay in this browser on this computer.</p>
     </section>
   </div>
 
@@ -177,7 +174,7 @@
   </details>
 
   <footer>
-    <p>Not affiliated with or endorsed by Bandai Namco. Ace Combat is a trademark of its owner. You need your own copy of the game; this site does not provide any game data.</p>
+    <p>Not affiliated with or endorsed by Bandai Namco. Ace Combat is a trademark of its owner. The game data is provided with permission, for free and non-commercial play only.</p>
     <p>Fonts: Barlow and Barlow Condensed by Jeremy Tribby, SIL Open Font License (<a href="fonts/OFL.txt">licence</a>).</p>
   </footer>
 </div>

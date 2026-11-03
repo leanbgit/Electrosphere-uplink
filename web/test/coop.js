@@ -6,9 +6,17 @@ const log = (t, cls) => { const l = $('log'); const d = document.createElement('
 const status = (t, cls = 'dim') => { $('status').textContent = t; $('status').className = cls; };
 
 // ---------------------------------------------------------------- files
-// Same storage as web/app.js: discs in the origin-private file system,
-// English data and the memory card in IndexedDB ("ac3online").
-const have = { discs: [], patches: [], caches: [], card: null };
+// The game data is streamed from the site, as on the main page
+// (web/data-worker.js); the memory card comes from IndexedDB ("ac3online").
+const have = { patches: [], caches: [], card: null };
+let gameData = null;
+const dataWorker = new Worker('data-worker.js');
+// a channel to the data worker for one game worker
+function streamed() {
+  const ch = new MessageChannel(), sab = new SharedArrayBuffer(16 + (1 << 20));
+  dataWorker.postMessage({ type: 'game', port: ch.port2, sab }, [ch.port2]);
+  return { remote: { port: ch.port1, sab, files: gameData.files }, transfer: [ch.port1] };
+}
 function db() {
   return new Promise((res, rej) => {
     const r = indexedDB.open('ac3online', 3);
@@ -21,15 +29,16 @@ async function idbGet(store, key) {
   return new Promise(res => { const r = d.transaction(store).objectStore(store).get(key); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); });
 }
 async function loadRemembered() {
-  try {
-    const dir = await navigator.storage.getDirectory();
-    for (const d of [1, 2]) {
-      const mark = localStorage.getItem(`ac3.disc${d}`);
-      if (!mark) continue;
-      const f = await (await dir.getFileHandle(`disc${d}.bin`)).getFile();
-      if (String(f.size) === mark) have.discs[d] = f;
-    }
-  } catch { /* none */ }
+  gameData = await new Promise(res => {
+    dataWorker.onmessage = e => {
+      const m = e.data;
+      if (m.type === 'ready') res(m.manifest);
+      else if (m.type === 'unavailable') res(null);
+      else if (m.type === 'error') log(m.text, 'bad');
+      else if (m.type === 'log') log(m.text, 'dim');
+    };
+    dataWorker.postMessage({ type: 'init', url: 'gamedata/manifest.json' });
+  });
   for (const d of [1, 2]) {
     const r = await fetch(`patches/CD${d}.xdelta`).catch(() => null);
     if (r && r.ok) have.patches.push({ disc: d, file: await r.blob() });
@@ -38,9 +47,8 @@ async function loadRemembered() {
   }
   const card = await idbGet('cards', 0);
   if (card && card.data) have.card = card.data;
-  const n = [1, 2].filter(d => have.discs[d]).length;
-  if (!have.discs[1]) return status('No remembered discs: play once on the main page from this same address, then come back.', 'bad');
-  status((n === 2 ? 'Both discs found.' : 'Disc 1 found (disc 2 missing).') + (have.card ? ' Using your memory card (read only).' : ' No save found: starting with an empty card.'), 'ok');
+  if (!gameData) return status('No game data on this site (gamedata/manifest.json).', 'bad');
+  status('Game data found.' + (have.card ? ' Using your memory card (read only).' : ' No save found: starting with an empty card.'), 'ok');
   $('start').disabled = false;
   $('check').disabled = false;
 }
@@ -217,9 +225,10 @@ $('start').onclick = async () => {
   };
   running = true; requestAnimationFrame(tick);
   status('Running. Player 1 starts the game as usual.', 'ok');
+  const st = streamed();
   worker.postMessage({ type: 'start', ctrl: ctrl.buffer, pad: pad1.buffer, pad2: pad2.buffer, ring,
-    discs: [1, 2].filter(d => have.discs[d]).map(d => have.discs[d]), patches: have.patches, caches: have.caches,
-    english: have.patches.length > 0, cards: have.card ? [{ slot: 0, data: have.card.slice(0) }] : [], extraArgs });
+    discs: [], remote: st.remote, patches: have.patches, caches: have.caches,
+    english: have.patches.length > 0, cards: have.card ? [{ slot: 0, data: have.card.slice(0) }] : [], extraArgs }, st.transfer);
 };
 function finish(text) {
   running = false;
@@ -278,9 +287,10 @@ $('check').onclick = async () => {
     else if (m.type === 'exit') { finish('Sync check finished.'); $('check').disabled = false; $('checkstatus').textContent = `done: ${n} fields`; }
   };
   status('Sync check running (unpaced, no sound).', 'ok');
+  const st = streamed();
   worker.postMessage({ type: 'start', ctrl: ctrl.buffer, pad: pad1.buffer, ring: new SharedArrayBuffer(8 + 44100 * 4), noPace: true,
-    discs: [1, 2].filter(d => have.discs[d]).map(d => have.discs[d]), patches: have.patches, caches: have.caches,
-    english: have.patches.length > 0, cards: [], extraFiles, extraArgs });
+    discs: [], remote: st.remote, patches: have.patches, caches: have.caches,
+    english: have.patches.length > 0, cards: [], extraFiles, extraArgs }, st.transfer);
 };
 
 loadRemembered();

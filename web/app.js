@@ -19,159 +19,20 @@ if (!self.crossOriginIsolated)
       '(serve.bat locally, or a host that sends the COOP/COEP headers); opening the file directly does not work.', 'bad');
 
 // --------------------------------------------------------------- game files
-// Each needed file can come from three places, in this order of preference:
-//   selected  - picked/dropped in this visit
-//   stored    - remembered in this browser (disc images, in OPFS)
-//   bundled   - shipped with the site: Project NEMO's patches/CD1.xdelta, CD2.xdelta
-const RAW = 2352;
-const have = { disc: {}, patch: {} };                // [kind][1|2] = { file | url, src }
-let storing = 0;
+// The game data is streamed from the website (gamedata/, web/data-worker.js);
+// players no longer select disc files. Project NEMO's English patches ship
+// with the site. Disc images remembered by older versions of the page (OPFS)
+// are no longer used; "Forget stored game data" removes them.
+const have = { patch: {} };                          // [1|2] = { url, src: 'bundled' }
 
-// Ace Combat 3 "Rev 1" (SLPS-02020/02021): both discs carry this ACE3.BIN.
-// Same value as web/worker.js, which checks again when the game starts.
-const EXE_SHA256 = '2c3f2ce41268176128973ea0cd9b28784a26c0061bff5550c99599388f13ebe9';
-const read = async (file, start, n) => new Uint8Array(await file.slice(start, start + n).arrayBuffer());
-const text = b => String.fromCharCode(...b).trim();
-
-// user data of raw MODE2/2352 sectors (the format the game needs)
-async function readUser(file, lba, nbytes) {
-  if (nbytes > 4 << 20) throw new Error('directory or file too large');
-  const out = new Uint8Array(Math.ceil(nbytes / 2048) * 2048);
-  for (let i = 0; i * 2048 < nbytes; i++) out.set(await read(file, (lba + i) * RAW + 24, 2048), i * 2048);
-  return out.subarray(0, nbytes);
-}
-async function volumeId(file) { return text(await read(file, 16 * RAW + 24 + 40, 32)); }
-// a 2048-byte-per-sector copy (.iso) loses the CD-XA audio and video the game streams
-async function isoVolumeId(file) {
-  const pvd = await read(file, 16 * 2048, 72);
-  return text(pvd.subarray(1, 6)) === 'CD001' ? text(pvd.subarray(40, 72)) : '';
-}
-// SHA-256 of ACE3.BIN in the root directory, or '' when the image has none
-async function exeHash(file) {
-  const pvd = await readUser(file, 16, 2048), pv = new DataView(pvd.buffer);
-  const dir = await readUser(file, pv.getUint32(158, true), pv.getUint32(166, true));
-  for (let off = 0; off < dir.length;) {
-    const len = dir[off];
-    if (len === 0) { off = (Math.floor(off / 2048) + 1) * 2048; continue; }
-    const name = text(dir.subarray(off + 33, off + 33 + dir[off + 32])).split(';')[0];
-    if (name.toUpperCase() === 'ACE3.BIN') {
-      const dv = new DataView(dir.buffer, dir.byteOffset + off);
-      const exe = await readUser(file, dv.getUint32(2, true), dv.getUint32(10, true));
-      return [...new Uint8Array(await crypto.subtle.digest('SHA-256', exe))].map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    off += len;
-  }
-  return '';
-}
-
-const NOT_RAW = 'The game needs a raw .bin image (2352-byte sectors, usually next to a .cue file): ' +
-                'its music and videos are stored in a way that .iso, .img, .chd and .pbp copies lose or compress.';
-
-async function classify(list) {
-  for (const f of list) {
-    const n = f.name.toLowerCase(), ext = n.includes('.') ? n.slice(n.lastIndexOf('.')) : '';
-    if (n.endsWith('.en.cache')) {
-      log(`${f.name}: not needed, the English data is built in this browser.`, 'dim');
-    } else if (ext === '.xdelta') {
-      log(`${f.name}: not needed, the English translation is included with the site.`, 'dim');
-    } else if (ext === '.cue' || ext === '.ccd' || ext === '.sub') {
-      log(`${f.name}: not needed, select the .bin file it belongs with.`, 'dim');
-    } else if (['.zip', '.7z', '.rar', '.gz', '.ecm'].includes(ext)) {
-      log(`${f.name}: compressed. Extract it first, then select the .bin file inside.`, 'bad');
-    } else if (['.iso', '.img', '.chd', '.pbp', '.mdf', '.nrg', '.cso'].includes(ext)) {
-      const v = f.size > 100e6 && (ext === '.iso' || ext === '.img') ? await isoVolumeId(f).catch(() => '') : '';
-      log(`${f.name}: ${/^ACE3ES[12]$/.test(v) ? 'this is Ace Combat 3, but as a 2048-byte copy. ' : 'not a supported disc image format. '}${NOT_RAW}`, 'bad');
-    } else if (ext === '.bin') {
-      if (f.size < 100e6) {
-        log(`${f.name}: too small for an Ace Combat 3 disc (${(f.size / 1048576).toFixed(0)} MB; each disc is about 690 MB). ` +
-            'If the game is split into several .bin files, the large one is the disc.', 'bad');
-        continue;
-      }
-      const v = await volumeId(f).catch(() => '');
-      const d = v === 'ACE3ES1' ? 1 : v === 'ACE3ES2' ? 2 : 0;
-      if (!d) {
-        const iv = await isoVolumeId(f).catch(() => '');
-        if (/^ACE3ES[12]$/.test(iv)) log(`${f.name}: this is Ace Combat 3, but as a 2048-byte copy. ${NOT_RAW}`, 'bad');
-        else log(`${f.name}: not an Ace Combat 3 disc image (volume "${v.replace(/[^\x20-\x7e]/g, '?')}")`, 'bad');
-        continue;
-      }
-      // the version check, before anything is kept: only "Rev 1" works
-      let hash = '';
-      try { hash = await exeHash(f); } catch { /* unreadable directory: hash stays '' */ }
-      if (hash !== EXE_SHA256) {
-        log(`${f.name}: Ace Combat 3 disc ${d}, but ${hash ? 'not the Japanese "Rev 1" release (SLPS-02020/02021), or a modified copy' : 'its files could not be read (damaged or modified image)'}. ` +
-            'Only the unmodified Rev 1 discs are supported.', 'bad');
-        continue;
-      }
-      have.disc[d] = { file: f, src: 'selected' };
-      log(`${f.name}: disc ${d} (Rev 1)`, 'ok');
-      if ($('remember').checked) storeDisc(d, f);    // runs in the background
-    } else if (f.size === 0 && !f.type) {
-      log(`${f.name}: a folder or an empty file. Select the .bin files themselves.`, 'dim');
-    } else {
-      log(`ignored ${f.name}: not a disc image (.bin)`, 'dim');
-    }
-  }
-  renderFiles();
-}
-
-// ---- remembered disc images: Origin Private File System (OPFS)
+// ---- disc images remembered by older versions of the page (OPFS)
 async function opfs() {
   try { return navigator.storage && navigator.storage.getDirectory ? await navigator.storage.getDirectory() : null; }
   catch { return null; }
 }
 const discMark = d => `ac3.disc${d}`;               // set only once a copy is complete
-async function storeDisc(d, file) {
-  const dir = await opfs();
-  if (!dir) return log('This browser cannot store disc images; select them again next visit.', 'dim');
-  try {
-    const est = await navigator.storage.estimate();
-    const old = have.disc[d] && have.disc[d].src === 'stored' ? have.disc[d].file.size : 0;
-    if (est.quota - est.usage + old < file.size * 1.02)
-      return log(`Not enough browser storage to remember disc ${d} (needs ${(file.size / 1048576).toFixed(0)} MB).`, 'bad');
-    if (navigator.storage.persist) await navigator.storage.persist();
-    const h = await dir.getFileHandle(`disc${d}.bin`, { create: true });
-    if (!h.createWritable) return log('This browser cannot write to its file storage; discs will not be remembered.', 'dim');
-    localStorage.removeItem(discMark(d));
-    storing++; renderFiles();
-    const w = await h.createWritable(), rd = file.stream().getReader();
-    let done = 0, last = 0;
-    for (;;) {
-      const { value, done: end } = await rd.read();
-      if (end) break;
-      await w.write(value);
-      done += value.length;
-      if (performance.now() - last > 250) {
-        last = performance.now();
-        const pct = done * 100 / file.size;
-        $('storeprog').textContent = `Remembering disc ${d}: ${Math.floor(pct)}%`;
-        loader.show('store', `Remembering disc ${d} in this browser`, 'Only once: next time the discs load by themselves.');
-        loader.set('store', pct, pct);
-      }
-    }
-    await w.close();
-    loader.set('store', 100); loader.hide('store');
-    localStorage.setItem(discMark(d), String(file.size));
-    log(`Disc ${d} remembered in this browser; next time it loads automatically.`, 'ok');
-  } catch (e) {
-    log(`Could not remember disc ${d}: ${e.message || e}`, 'bad');
-  } finally {
-    loader.hide('store');
-    storing = Math.max(0, storing - 1);
-    $('storeprog').textContent = storing ? $('storeprog').textContent : '';
-    renderFiles();
-  }
-}
-
 async function loadRemembered() {
-  const dir = await opfs();
   for (const d of [1, 2]) {
-    if (dir && localStorage.getItem(discMark(d))) {
-      try {
-        const f = await (await dir.getFileHandle(`disc${d}.bin`)).getFile();
-        if (String(f.size) === localStorage.getItem(discMark(d))) have.disc[d] = { file: f, src: 'stored' };
-      } catch { /* gone */ }
-    }
     // Project NEMO's patches ship with the site (used with their permission).
     const r = await fetch(`patches/CD${d}.xdelta`, { method: 'HEAD' }).catch(() => null);
     if (r && r.ok) have.patch[d] = { url: `patches/CD${d}.xdelta`, src: 'bundled' };
@@ -185,40 +46,70 @@ async function forgetAll() {
     localStorage.removeItem(discMark(d));
     if (dir) await dir.removeEntry(`disc${d}.bin`).catch(() => {});
     await idbDel('patches', d); await idbDel('encache', d);
-    for (const k of ['disc', 'patch']) if (have[k][d] && have[k][d].src === 'stored') delete have[k][d];
   }
-  log('Remembered disc images and English data removed from this browser (saves kept).', 'ok');
+  dataWorker.postMessage({ type: 'forget' });
+  log('Remembered disc images, downloaded game data and English data removed from this browser (saves kept).', 'ok');
   await loadRemembered();
   renderFiles();
 }
 
-const SRC = { selected: 'selected', stored: 'remembered in this browser', bundled: 'included with the site' };
 function renderFiles() {
-  const ul = $('files'); ul.replaceChildren();
-  const add = (t, cls) => { const li = document.createElement('li'); li.textContent = t; li.className = cls; ul.appendChild(li); };
-  for (const d of [1, 2]) {
-    const x = have.disc[d];
-    add(x ? `Disc ${d}: ${SRC[x.src]} (${(x.file.size / 1048576).toFixed(0)} MB)` : `Disc ${d}: not selected`, x ? 'ok' : 'dim');
-  }
-  $('start').disabled = !have.disc[1] || running;
+  const ready = !!gameData;
+  $('start').disabled = !ready || running;
   // always English (Project NEMO's patches ship with the site); a copy of the
   // site without them can only run the original Japanese text
   $('enhint').textContent = !have.patch[1] ? 'This copy of the site is missing patches/CD1.xdelta, so the game will be in Japanese.'
     : !have.patch[2] ? 'This copy of the site is missing patches/CD2.xdelta, so disc 2 will be in Japanese.' : '';
   // checklist and readouts
-  $('step-discs').classList.toggle('done', !!have.disc[1]);
-  $('step-settings').classList.toggle('done', !!have.disc[1]);
+  $('step-discs').classList.toggle('done', ready);
+  $('step-settings').classList.toggle('done', ready);
   $('ro-lang').textContent = have.patch[1] ? 'English' : 'Japanese';
+  renderData();
   const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
-  $('idle-hint').textContent = (have.disc[1] ? '' : 'Add your game discs in the pre-flight check to play.') +
+  $('idle-hint').textContent = (ready ? '' : gameDataState === 'loading' ? 'Getting the game ready…' : 'The game data could not be loaded from this site (see the log).') +
     (touchOnly ? ' You will need a keyboard or a game controller: touch controls are not available yet.' : '');
 }
-$('pick').onchange = e => classify(e.target.files);
 $('forget').onclick = () => { if (!running) forgetAll(); };
-const drop = $('drop');
-drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
-drop.ondragleave = () => drop.classList.remove('over');
-drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); classify(e.dataTransfer.files); };
+
+// ------------------------------------------------------- streamed game data
+// The site hosts the game data (gamedata/manifest.json, written by
+// tools/make_gamedata.py); web/data-worker.js streams it to the game and keeps
+// what it downloaded in this browser. A copy of the site without it cannot
+// start the game (see the README to make it from your own discs).
+let gameData = null, gameDataState = 'loading', dataStatus = null;
+const dataWorker = new Worker('data-worker.js');
+const MB = n => (n / 1048576).toFixed(0);
+function renderData() {
+  const el = $('gd-status'), btn = $('gd-download');
+  if (!gameData) { el.textContent = gameDataState === 'loading' ? 'Checking…' : 'Not available on this copy of the site.'; btn.hidden = true; return; }
+  const s = dataStatus;
+  if (!s) { el.textContent = 'Streamed from this site: nothing to select.'; btn.hidden = true; return; }
+  const all = s.have === s.total;
+  el.textContent = !s.stored ? 'Streamed from this site: nothing to select. (This browser cannot store it, so it is downloaded again on each visit.)'
+    : s.full ? `Streamed from this site: nothing to select. This browser's storage is full after ${MB(s.bytesHave)} of ${MB(s.bytesTotal)} MB; the rest is downloaded when needed.`
+    : all ? `Streamed from this site and fully stored in this browser (${MB(s.bytesTotal)} MB): starts and plays without waiting.`
+    : `Streamed from this site: nothing to select. Stored in this browser: ${MB(s.bytesHave)} of ${MB(s.bytesTotal)} MB` +
+      (s.background ? ' (downloading in the background).' : '. The rest downloads while you play.');
+  btn.hidden = !s.stored || all || s.full;
+  btn.textContent = s.background ? 'Pause download' : 'Download all now';
+}
+dataWorker.onmessage = e => {   // (renderData also runs from renderFiles)
+  const m = e.data;
+  if (m.type === 'ready') { gameData = m.manifest; gameDataState = 'ready'; renderFiles(); renderData(); }
+  else if (m.type === 'unavailable') { gameDataState = 'none'; renderFiles(); renderData(); }
+  else if (m.type === 'status') {
+    dataStatus = m; renderData();
+    if (running && !$('loader').hidden && m.fetched) $('ld-sub').textContent = `Downloading game data: ${MB(m.fetched)} MB`;
+  }
+  else if (m.type === 'log') log(m.text, 'dim');
+  else if (m.type === 'error') { log(m.text, 'bad'); if (running) $('status').textContent = m.text; }
+};
+dataWorker.onerror = () => { gameDataState = 'none'; renderFiles(); renderData(); };
+dataWorker.postMessage({ type: 'init', url: 'gamedata/manifest.json' });
+$('gd-download').onclick = () => {
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  dataWorker.postMessage({ type: dataStatus && dataStatus.background ? 'pause' : 'download' });
+};
 
 // ------------------------------------------------------------------- saves
 const DB = 'ac3online', STORE = 'cards';   // storage name from the project's first name; kept so saves and English data survive
@@ -579,6 +470,7 @@ $('start').onclick = () => startGame(null);
 let online = null;
 async function startGame(onlineSession) {
   if (!self.crossOriginIsolated) { $('status').textContent = 'This page cannot run the game: it is not cross-origin isolated. See Diagnostics.'; return false; }
+  if (!gameData) { $('status').textContent = 'The game data is not available on this site.'; return false; }
   online = onlineSession;
   running = true; renderFiles(); $('stop').disabled = false;
   document.body.classList.add('live');
@@ -608,7 +500,14 @@ async function startGame(onlineSession) {
 
   const english = !!have.patch[1];
   buildingEnglish = [];
-  const discs = [1, 2].filter(d => have.disc[d]).map(d => have.disc[d].file);
+  const discs = [];                                        // the game data is streamed (data-worker.js)
+  let remote = null;
+  {
+    const ch = new MessageChannel(), sab = new SharedArrayBuffer(16 + (1 << 20));
+    dataWorker.postMessage({ type: 'game', port: ch.port2, sab }, [ch.port2]);
+    remote = { port: ch.port1, sab, files: gameData.files };
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  }
   const patches = [];
   if (english) for (const d of [1, 2]) {
     const x = have.patch[d]; if (!x) continue;
@@ -619,7 +518,8 @@ async function startGame(onlineSession) {
   if (english) for (const n of [1, 2]) {
     const c = await idbGet('encache', n);
     if (c) { caches.push({ disc: n, file: new Blob([c.data]) }); log(`using English data for disc ${n} stored in this browser`); }
-    else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); if (have.disc[n]) buildingEnglish.push(n); }
+    else if (remote && gameData.files['en' + n]) { /* prebuilt English data comes with the streamed game data */ }
+    else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); buildingEnglish.push(n); }
   }
   const stored = online && online.card !== undefined ? (online.card ? { data: online.card } : null) : await cardGet(0);
   const cards = stored ? [{ slot: 0, data: stored.data.buffer.slice(0) }] : [];
@@ -627,7 +527,9 @@ async function startGame(onlineSession) {
   worker = new Worker('worker.js');
   worker.onmessage = async e => {
     const m = e.data;
-    if (m.type === 'frame') { if (m.buf) latest = m; frames++; if (m.seq === 1 || frames === 1) loader.hide('game'); const t = performance.now(); if (t - lastFpsT > 1000) { $('fps').textContent = `${Math.round(frames * 1000 / (t - lastFpsT))} fps`; frames = 0; lastFpsT = t; } }
+    if (m.type === 'frame') { if (m.buf) latest = m; frames++;
+      if (m.seq === 1 || frames === 1) { loader.hide('game'); if (remote) dataWorker.postMessage({ type: 'download' }); }   // then fill the browser's copy while playing
+      const t = performance.now(); if (t - lastFpsT > 1000) { $('fps').textContent = `${Math.round(frames * 1000 / (t - lastFpsT))} fps`; frames = 0; lastFpsT = t; } }
     else if (m.type === 'log') log(m.text);
     else if (m.type === 'progress') loaderStage(m.stage, m.disc, m.done, m.total);
     else if (m.type === 'hd-off') hdOff(m.text);
@@ -642,7 +544,7 @@ async function startGame(onlineSession) {
   };
   worker.onerror = e => { log('worker error: ' + e.message, 'bad'); stop(); };
   worker.postMessage({ type: 'start', ctrl: ctrl.buffer, pad: padSab, ring,
-    discs, patches, caches, english, cards, hd, net: online ? online.net : undefined }, hd ? [hd.port] : []);
+    discs, patches, caches, english, cards, hd, remote, net: online ? online.net : undefined }, [...(hd ? [hd.port] : []), ...(remote ? [remote.port] : [])]);
   $('status').textContent = 'Running. Click the screen area, then use the keyboard or a controller.';
   return true;
 }
