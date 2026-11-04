@@ -113,9 +113,18 @@ void psyq_ClearOTagR(ctx_t *ctx) {
  * picture into the game's VRAM (identical on both computers: the game reads
  * pixels back now and then), then the guest's picture into a display copy
  * with the same starting GPU state. The enhanced renderer's hooks only see
- * the guest's pass. See runtime/hle/coop.c. */
+ * the guest's pass. See runtime/hle/coop.c. Each pass ends with the other
+ * player's username beside their box, if that view labelled it (coop_name.c). */
+static void names_host_view(void)  { ac3_coop_name_draw(0); }
+static void names_guest_view(void) { ac3_coop_name_draw(1); }
 static void draw_ot(u32 head) {
-    if (!ac3_coop_gpu_ready()) { walk_list(head); return; }   /* no guest picture this frame */
+    gpu_walk_tail = names_host_view;
+    if (!ac3_coop_gpu_ready()) {                     /* no guest picture this frame */
+        walk_list(head);
+        gpu_walk_tail = NULL;
+        ac3_coop_name_done();
+        return;
+    }
     gpu_sw_state_t before = gpu_sw;
 #ifdef AC3_ENHANCED
     const gpu_sw_hooks_t *hooks = gpu_sw_hooks;
@@ -131,10 +140,13 @@ static void draw_ot(u32 head) {
     if (disp) {
         gpu_sw = before;
         ac3_vram = disp;
+        gpu_walk_tail = names_guest_view;
         walk_list(head);
         ac3_vram = game;
         gpu_sw = after;
     }
+    gpu_walk_tail = NULL;
+    ac3_coop_name_done();
     ac3_coop_gpu_draw(0);
 }
 

@@ -307,8 +307,9 @@ static void radar_other_player(ctx_t *ctx) {
  * and FRND under it, FN_DRAW_LABEL(LABEL_FRND, left, bottom)). The players
  * have no record. So right after FN_PROJECT_TARGETS (the GTE still holds its
  * camera matrix) the other player is projected the same way, and after
- * FN_DRAW_LABELS a FRND label is drawn under it (no name: the name table only
- * holds the mission's characters). */
+ * FN_DRAW_LABELS a FRND label is drawn under it. The name table only holds the
+ * mission's characters, so the player's username is drawn by coop_name.c, at
+ * the spot noted here. */
 static struct { int on; s16 x, y, size; s32 dist; } MK;   /* where the other player is on screen */
 
 static u32 isqrt64(double d) {
@@ -362,6 +363,7 @@ static int run_then(ctx_t *ctx, u32 target, void (*fn)(ctx_t *)) {
 static void label_other_player(ctx_t *ctx) {
     if (!MK.on) return;
     call_guest(ctx, FN_DRAW_LABEL, LABEL_FRND, (u32)(s32)(MK.x - MK.size), (u32)(s32)(MK.y + MK.size), 0);
+    coop_name_place(G.replaying, MK.x + MK.size, MK.y - MK.size);
     u32 m = MEM_R32(MISSION_STATE);
     if (ram_ptr(m) && (MEM_R32(m) & 4u)) return;              /* the game draws no boxes then either */
     u32 rec = (ctx->r[29] - 0x80u) & ~7u;

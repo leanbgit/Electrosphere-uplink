@@ -420,6 +420,8 @@ void decode_packet(u32 addr, int len) {
     }
 }
 
+void (*gpu_walk_tail)(void);
+
 void walk_list(u32 head) {
     u32 cur = head & 0x1FFFFCu;
     unsigned guard = 0, nodes = 0, packets = 0;
@@ -443,6 +445,7 @@ void walk_list(u32 head) {
         if (next == cur) break;
         cur = next;
     }
+    if (gpu_walk_tail) gpu_walk_tail();
 #ifdef AC3_ENHANCED
     if (hk && hk->list) hk->list(0);
 #endif

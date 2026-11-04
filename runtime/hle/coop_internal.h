@@ -30,6 +30,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+void coop_name_place(int view, s32 right, s32 top);   /* coop_name.c: the other player's box in this view */
+
 extern void ac3_interpret(ctx_t *ctx, u32 entry);
 extern void ac3_interpret_until(ctx_t *ctx, u32 pc, u32 stop);
 extern u32  ac3_vblank_count(void);

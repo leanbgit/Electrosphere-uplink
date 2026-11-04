@@ -52,5 +52,6 @@ void gp0_load_begin(u32 xy, u32 wh, PSX_RECT *out);    /* CPU to VRAM: the words
 extern int gp0_in_polyline;                            /* inside a polyline's points */
 void decode_packet(u32 addr, int len);                 /* one packet of an ordering table */
 void walk_list(u32 head);                              /* a whole ordering table */
+extern void (*gpu_walk_tail)(void);                    /* if set: drawn at the end of walk_list's table */
 
 #endif

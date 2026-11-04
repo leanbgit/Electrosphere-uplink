@@ -36,4 +36,8 @@ int  ac3_coop_gpu_ready(void);              /* 1 = a guest picture is waiting fo
 int  ac3_coop_gpu_draw(int begin);          /* around DrawOTag's second pass: 1 = guest picture laid over RAM */
 u16 *ac3_coop_display_pass(const u16 *game_vram);   /* the display VRAM for that pass */
 u16 *ac3_coop_display_vram(u16 *game_vram);         /* what to show this field */
+/* the players' usernames, shown beside the other player's box (coop_name.c) */
+void ac3_coop_set_names(const char *host, const char *guest);
+void ac3_coop_name_draw(int view);                  /* end of a view's pass: 0 the host's, 1 the guest's */
+void ac3_coop_name_done(void);                      /* after the frame's drawing */
 #endif

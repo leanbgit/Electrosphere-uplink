@@ -18,7 +18,7 @@ let ctrl = null;              // Int32Array: [0] quit [1] audio running [2] slee
 let audioCtx = null, audioNode = null;
 
 // online: null for a normal game. For online co-op (page/online.js):
-//   { net: {role, delay, inbound}, card: Uint8Array | null (the host's card; the guest's
+//   { net: {role, delay, inbound, names}, card: Uint8Array | null (the host's card; the guest's
 //     game never saves to this browser), gfx: {scale, bits} (the host's settings),
 //     onMessage(m) for the worker's 'net-*' messages, onStop() }
 // Returns false if the game could not start.

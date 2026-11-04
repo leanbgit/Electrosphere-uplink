@@ -357,6 +357,9 @@ self.onmessage = async (e) => {
     }
     // online co-op: the guest's aircraft on controller 2; the guest's computer shows the guest's view
     if (m.net) args.push('--coop-guest', ...(m.net.role === 'guest' ? ['--coop-view'] : []));
+    // the players' usernames ([host's, guest's]), shown beside the other player's plane
+    if (m.net && Array.isArray(m.net.names) && m.net.names.length === 2)
+      args.push('--coop-names', ...m.net.names.map(n => String(n || '').slice(0, 24)));
     // Development only (test bench): extra files copied into /rec and extra
     // game arguments, e.g. an input recording for --play-input. The page never
     // sends these, and the website's build ignores them.

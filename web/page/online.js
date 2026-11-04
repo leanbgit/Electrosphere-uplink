@@ -23,7 +23,7 @@ const ICE = [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.goo
 const CONNECT_TIMEOUT = 20000;
 const FIELD_MS = 1000 / 59.94;
 const S = {
-  ws: null, role: null, code: null, peer: '', pc: null, dc: null, pending: [],
+  ws: null, role: null, code: null, peer: '', me: '', pc: null, dc: null, pending: [],
   version: '', hello: null, setup: null, ready: false, rtt: [], inbound: null, started: false, timer: 0,
   setupOk: false,          // guest: the host's set-up was valid and we answered "ready"
   helloTimer: 0, repeats: 0, refusal: null, refused: false,   // the hello, repeated until answered (channel())
@@ -130,6 +130,7 @@ function fromServer(m) {
   }
   case 'joined':
     S.peer = m.peer;
+    S.me = m.name;                                 // as the server passed it on to the other player
     el('on-requests').replaceChildren();
     if (S.role === 'asking') S.role = 'guest';
     state(`${m.peer} is here. Connecting your browsers…`);
@@ -343,7 +344,8 @@ async function start(delay) {
   if (S.role === 'host') toServer({ t: 'start' });
   state(`Playing with ${S.peer} (input delay ${delay} fields).`, 'ok');
   const ok = await game.start({
-    net: { role: S.role, delay, inbound: S.inbound },
+    net: { role: S.role, delay, inbound: S.inbound,
+           names: S.role === 'host' ? [S.me, S.peer] : [S.peer, S.me] },   // [host's, guest's]: drawn beside the other plane
     card, gfx: S.setup ? S.setup.gfx : null,
     onMessage: m => {
       if (m.type === 'net-out') { if (S.dc && S.dc.readyState === 'open') S.dc.send(m.data); }
@@ -392,7 +394,7 @@ function leave(keepMessage) {
   veil('');
   closePeer();
   if (S.ws) { S.ws.onclose = null; S.ws.close(); S.ws = null; }
-  Object.assign(S, { role: null, code: null, peer: '', inbound: null, started: false, ready: false });
+  Object.assign(S, { role: null, code: null, peer: '', me: '', inbound: null, started: false, ready: false });
   el('on-requests').replaceChildren();
   view(false);
   if (!keepMessage) state('');
