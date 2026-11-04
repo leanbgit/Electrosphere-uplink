@@ -13,6 +13,14 @@
   <div class="wrap sky-inner">
     <h1 class="wordmark">Electrosphere <span>Uplink</span></h1>
     <p class="tagline">Ace Combat 3: Electrosphere, the Japanese release in English, in your browser. Alone or with a wingman.</p>
+    <div class="theme" role="group" aria-label="Theme">
+      <button class="theme-btn" data-set="auto" aria-pressed="true" title="Follow your system's setting">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>Auto</span></button>
+      <button class="theme-btn" data-set="light" aria-pressed="false" title="Light">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><span>Light</span></button>
+      <button class="theme-btn" data-set="dark" aria-pressed="false" title="Dark">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><span>Dark</span></button>
+    </div>
   </div>
 </header>
 <div class="wrap">
@@ -125,8 +133,8 @@
             <h4>Game data</h4>
             <p id="gd-status">Checking…</p>
             <p>The game (about 1.4 GB) is kept in this browser's own storage while you play, so later sessions do not download it again. It is not saved as a file on your computer.</p>
-            <p><b>If you experience stuttering while playing, consider downloading the game data into this browser now.</b></p>
-            <div class="row"><button class="quiet small" id="gd-fill" hidden>Full download</button><button class="quiet small" id="forget">Delete stored game data</button></div>
+            <p><strong>If you experience stuttering while playing, consider downloading the game data into this browser now.</strong></p>
+            <div class="row"><button class="quiet small" id="gd-fill" hidden>Download it into this browser now</button><button class="quiet small" id="forget">Delete stored game data</button></div>
           </div>
         </div>
       </div>

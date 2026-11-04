@@ -60,7 +60,18 @@ a { color: inherit; text-underline-offset: 3px; }
 
 /* ---- the sky band */
 .sky { background: linear-gradient(180deg, var(--sky) 0%, var(--sky-low) 100%); color: var(--sky-ink); padding: 34px 0 120px; }
-.sky-inner { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 32px; }
+.sky-inner { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 32px; position: relative; }
+
+/* the theme switch (page/theme.js), top right of the sky band */
+.theme { position: absolute; top: -18px; right: 24px; display: flex; gap: 2px; padding: 3px; border-radius: 10px;
+         background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .12); }
+.theme .theme-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 7px; border: 0;
+                    background: transparent; color: var(--sky-ink-soft); font: 500 13px/1 var(--font); }
+.theme .theme-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .10); color: var(--sky-ink); box-shadow: none; transform: none; }
+.theme .theme-btn:active:not(:disabled) { background: rgba(255, 255, 255, .16); transform: none; }
+.theme .theme-btn[aria-pressed="true"] { background: rgba(255, 255, 255, .16); color: var(--sky-ink); }
+.theme svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 640px) { .theme { right: 16px; top: 0; } .theme .theme-btn { padding: 6px 8px; } .theme .theme-btn span { display: none; } }
 .wordmark { margin: 0; font: 600 clamp(40px, 6.4vw, 76px)/.9 var(--font-cond); letter-spacing: -.01em; }
 .wordmark span { display: block; font-weight: 500; color: var(--sky-ink-soft); }
 .tagline { margin: 0 0 4px; max-width: 42ch; color: var(--sky-ink-soft); font-size: 17px; }
@@ -176,7 +187,7 @@ label.check input { margin-top: 4px; accent-color: var(--ok); }
 .note { font-size: 14px; color: var(--ink-soft); margin: 4px 0 0; min-height: 1em; }
 .note.ok { color: var(--ok); } .note.bad { color: var(--bad); }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.row[hidden] { display: none; }
+.row[hidden], #step-online .row[hidden] { display: none; }
 #forget { margin-top: 6px; }
 
 /* online panel (web/online.js) */

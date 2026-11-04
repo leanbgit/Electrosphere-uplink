@@ -1,6 +1,10 @@
 // coi-boot.js -- loaded first by index.html (a file, not an inline script, so the
 // Content-Security-Policy needs no 'unsafe-inline').
 'use strict';
+  // The theme chosen on the page (page/theme.js), set before the page is drawn
+  // so it never flashes in the other one. Nothing stored: the system's.
+  try { const t = localStorage.getItem('ac3.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+
   // The game needs a cross-origin isolated page (SharedArrayBuffer). Hosts that
   // cannot send the COOP/COEP headers get them from a tiny service worker.
   if (!window.crossOriginIsolated && window.isSecureContext && 'serviceWorker' in navigator) {
