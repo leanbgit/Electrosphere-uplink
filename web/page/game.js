@@ -72,6 +72,7 @@ async function startGame(onlineSession) {
   const stored = online && online.card !== undefined ? (online.card ? { data: online.card } : null) : await cardGet(0);
   const cards = stored ? [{ slot: 0, data: stored.data.buffer.slice(0) }] : [];
 
+  if (online) watchLongTasks();
   worker = new Worker('worker.js');
   worker.onmessage = fromGame;
   worker.onerror = e => { log('worker error: ' + e.message, 'bad'); stop(); };
@@ -79,6 +80,24 @@ async function startGame(onlineSession) {
     discs, patches, caches, english, cards, hd, remote, net: online ? online.net : undefined }, [...(hd ? [hd.port] : []), ...(remote ? [remote.port] : [])]);
   $('status').textContent = 'Running. Click the screen area, then use the keyboard or a controller.';
   return true;
+}
+
+// Online co-op: the controllers travel through this page (worker -> page ->
+// the connection -> the other page -> its worker), so a busy page holds up
+// both games. Where the browser reports it (Chrome), long busy spells of this
+// page go to the log next to the game's "stutter" lines.
+let longTasks = null, longLogged = 0;
+function watchLongTasks() {
+  if (longTasks || typeof PerformanceObserver === 'undefined' ||
+      !(PerformanceObserver.supportedEntryTypes || []).includes('longtask')) return;
+  longTasks = new PerformanceObserver(list => {
+    for (const e of list.getEntries())
+      if (e.duration > 80 && performance.now() - longLogged > 2000) {
+        longLogged = performance.now();
+        log(`stutter: this page was busy for ${Math.round(e.duration)} ms`);
+      }
+  });
+  longTasks.observe({ type: 'longtask' });
 }
 
 // Sound: an AudioWorklet reads the ring the game writes. Audio must start from

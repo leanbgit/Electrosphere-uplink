@@ -33,6 +33,10 @@ class RemoteFile {
   slice(a, b) { return { remote: this, a: Math.max(0, a), b: Math.min(this.size, b === undefined ? this.size : b) }; }
 }
 function remoteRead(file, a, b) {
+  const t0 = performance.now();
+  try { return remoteReadWait(file, a, b); } finally { stall.data += performance.now() - t0; }
+}
+function remoteReadWait(file, a, b) {
   const out = new Uint8Array(Math.max(0, b - a));
   const MAX = remote.data.length;
   for (let p = 0; p < out.length;) {
@@ -52,6 +56,23 @@ const reader = {
 };
 
 function log(text) { postMessage({ type: 'log', text }); }
+
+// Stutter report: a field that takes much longer than 1/60 s is logged
+// (Diagnostics) with what the game was waiting for meanwhile, at most every
+// 2 s. The rest of the time is the game itself or the browser (other tabs,
+// garbage collection).
+const stall = { t: 0, data: 0, hd: 0, net: 0, logged: 0 };
+function fieldDone() {
+  const now = performance.now(), netMs = net ? net.stats().waitMs : 0;
+  const dt = now - stall.t;
+  if (stall.t && dt > 70 && now - stall.logged > 2000) {
+    stall.logged = now;
+    const peer = netMs - stall.net, rest = dt - peer - stall.data - stall.hd;
+    log(`stutter: one field took ${Math.round(dt)} ms (waiting for the other player ${Math.round(peer)} ms, ` +
+        `for game data ${Math.round(stall.data)} ms, for the renderer ${Math.round(stall.hd)} ms, other ${Math.round(Math.max(0, rest))} ms)`);
+  }
+  stall.t = now; stall.data = stall.hd = 0; stall.net = netMs;
+}
 let lastProgress = {};
 function fail(text) { postMessage({ type: 'error', text }); }
 
@@ -104,6 +125,7 @@ self.AC3W = {
     postMessage({ type: 'frame2', w, h, seq, own, buf: copy.buffer }, [copy.buffer]);
   },
   postFrame(view, w, h, seq) {
+    fieldDone();
     if (seq === 1) sendNewEnglishCaches();
     if (seq === 1 && hdPort && !hdSkip)   // enhanced renderer missing from this build, or its setup failed
       postMessage({ type: 'hd-off', text: 'Enhanced graphics could not start (see Diagnostics); showing the original picture.' });
@@ -114,6 +136,7 @@ self.AC3W = {
   // ---- enhanced graphics (platform/web/web_platform.c, AC3_HW_WEBGPU)
   hdWanted: () => !!hdPort,
   hdSend(bytes, seq) {
+    fieldDone();
     if (seq === 1) sendNewEnglishCaches();
     if (seq > hdSkip) hdPort.postMessage(bytes.buffer, [bytes.buffer]);
     else Atomics.store(hdDone, 0, seq);     // development: fast-forward without drawing
@@ -130,12 +153,14 @@ self.AC3W = {
   },
   hdSkipping: seq => seq <= hdSkip,
   hdWait(seq) {
+    const t0 = performance.now();
     // the game may run at most two fields ahead of the GPU (native: two frames
     // in flight). If the render worker stops answering, carry on after 2 s.
     for (let t = 0; seq - Atomics.load(hdDone, 0) > 2 && t < 20; t++) {
       if (Atomics.wait(hdDone, 0, Atomics.load(hdDone, 0), 100) === 'timed-out' && t === 19)
         log('render worker is not answering; continuing without waiting');
     }
+    stall.hd += performance.now() - t0;
   },
   audioOk: () => Atomics.load(ctrl, 1) !== 0,
   audioQueued() {
