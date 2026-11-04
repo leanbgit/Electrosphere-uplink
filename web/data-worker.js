@@ -22,6 +22,7 @@ const inflight = new Map();     // 'name:i' -> Promise<void>
 const mem = new Map();          // fallback without OPFS: 'name:i' -> Uint8Array (LRU)
 const MEM_MAX = 48;
 let background = false, bgRunning = 0, urgent = 0;
+let storeLocked = false;        // the stored copy could not be opened (another tab has it, or no storage)
 let storeFull = false, fetched = 0;   // bytes downloaded in this session          // the browser's storage quota ran out: further pieces are kept in memory only
 const BG_CONCURRENCY = 3;
 let statusTimer = 0;
@@ -55,7 +56,13 @@ async function init(url) {
         const k = s.subHandle.read(s.subHave, { at: 0 });
         if (k < s.subHave.length) s.subHave.fill(0, k);
         // (the image grows as pieces are written: no space is taken up front)
-      } catch (e) { s.handle = null; s.haveHandle = null; s.subHandle = null; s.have.fill(0); s.subHave.fill(0); }
+      } catch (e) {
+        s.handle = null; s.haveHandle = null; s.subHandle = null; s.have.fill(0); s.subHave.fill(0);
+        if (!storeLocked) post({ type: 'log', text: e && e.name === 'NoModificationAllowedError'
+          ? 'game data: another tab of this site is using the stored copy; this tab downloads what it reads (kept in memory)'
+          : 'game data: this browser cannot store it (' + (e && e.message || e) + '); the game downloads what it reads' });
+        storeLocked = true;
+      }
     }
     store[name] = s;
   }
@@ -278,13 +285,17 @@ function attachGame(port, sab) {
 }
 
 // ---- background download of everything not stored yet
-function nextMissing() {
-  for (const key of hot) {                         // what the game is reading now
-    const [name, i] = [key.slice(0, key.lastIndexOf(':')), +key.slice(key.lastIndexOf(':') + 1)];
-    if (store[name].have[i] || inflight.has(key)) { hot.delete(key); continue; }
+// read-ahead: the pieces the game is reading now (also without storage: then
+// they are kept in memory)
+function nextHot() {
+  for (const key of hot) {
     hot.delete(key);
-    return [name, i];
+    const [name, i] = [key.slice(0, key.lastIndexOf(':')), +key.slice(key.lastIndexOf(':') + 1)];
+    if (!pieceReady(name, i) && !inflight.has(key)) return [name, i];
   }
+  return null;
+}
+function nextMissing() {
   for (const name of ORDER) {
     const f = man.files[name]; if (!f) continue;
     const h = store[name].have;
@@ -293,10 +304,11 @@ function nextMissing() {
   return null;
 }
 function pump() {
-  if (!background || storeFull || !store[ORDER.find(n => man.files[n])].handle) return;   // nothing to keep without OPFS
+  // filling the storage needs storage; the read-ahead does not
+  const fill = background && !storeFull && !!store[ORDER.find(n => man.files[n])].handle;
   while (bgRunning < (urgent ? 1 : BG_CONCURRENCY)) {       // the game's own reads come first
-    const n = nextMissing();
-    if (!n) { if (!bgRunning) { background = false; status(true); } return; }
+    const n = nextHot() || (fill ? nextMissing() : null);
+    if (!n) { if (fill && !bgRunning) { background = false; status(true); } return; }
     bgRunning++;
     ensure(n[0], n[1]).catch(err => post({ type: 'log', text: 'game data: ' + (err && err.message || err) }))
       .finally(() => { bgRunning--; pump(); });
