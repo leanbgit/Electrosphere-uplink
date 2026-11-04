@@ -73,7 +73,7 @@ a { color: inherit; text-underline-offset: 3px; }
 .theme svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 640px) { .theme { right: 16px; top: 0; } .theme .theme-btn { padding: 6px 8px; } .theme .theme-btn span { display: none; } }
 .wordmark { margin: 0; font: 600 clamp(40px, 6.4vw, 76px)/.9 var(--font-cond); letter-spacing: -.01em; }
-.wordmark span { display: block; font-weight: 500; color: var(--sky-ink-soft); }
+.wordmark span { display: block; font-weight: 500; color: #FF8A2A; text-shadow: 0 0 10px rgba(255, 122, 26, .35); }   /* neon orange, a soft glow */
 .tagline { margin: 0 0 4px; max-width: 42ch; color: var(--sky-ink-soft); font-size: 17px; }
 
 /* ---- deck: the screen rises out of the sky band */
