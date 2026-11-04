@@ -26,7 +26,7 @@ let storeLocked = false;        // the stored copy could not be opened (another 
 let storeFull = false, fetched = 0;   // bytes downloaded in this session          // the browser's storage quota ran out: further pieces are kept in memory only
 const BG_CONCURRENCY = 3;
 let statusTimer = 0;
-const ORDER = ['en1', 'en2', 'disc1', 'disc2'];   // what the game reads first
+const ORDER = ['packs', 'en1', 'en2', 'disc1', 'disc2'];   // what the game reads first
 
 const post = m => self.postMessage(m);
 
@@ -228,18 +228,25 @@ function ensureSubs(name, j0, j1) {
 function ensureSub(name, j) { return ensureSubs(name, j, j); }
 const pieceReady = (name, i) => mem.has(name + ':' + i) || (store[name].have[i] && store[name].handle);
 
+const lastEnd = {};                                // name -> where the game's previous read of it ended
 async function gather(name, off, len, out) {
   const f = man.files[name];
   const end = Math.min(f.size, off + len);
+  const sequential = lastEnd[name] !== undefined && off >= lastEnd[name] - SUB && off <= lastEnd[name] + 4 * SUB;
+  lastEnd[name] = end;
   const waits = [];
   for (let p = off; p < end;) {
     const i = Math.floor(p / man.chunk), pe = Math.min(end, (i + 1) * man.chunk);
     if (!pieceReady(name, i)) {
       if (rangeOK) waits.push(ensureSubs(name, Math.floor(p / SUB), Math.floor((pe - 1) / SUB)));
       else waits.push(ensure(name, i));
-      // read ahead: this piece and the next are downloaded whole, next in line
-      hot.add(name + ':' + i);
-      if (i + 1 < f.chunks) hot.add(name + ':' + (i + 1));
+      // read ahead when the game reads straight on (music, movies, loading a
+      // file): this piece and the next are downloaded whole, next in line. Not
+      // for scattered reads (the English data's check samples the whole disc).
+      if (sequential) {
+        hot.add(name + ':' + i);
+        if (i + 1 < f.chunks) hot.add(name + ':' + (i + 1));
+      }
     }
     p = pe;
   }

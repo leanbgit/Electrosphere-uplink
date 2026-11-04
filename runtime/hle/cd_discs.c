@@ -161,6 +161,47 @@ static void pack_serve(void) {
     }
 }
 
+/* Which ACE.BPB records differ between the discs' English versions takes
+ * comparing their sectors: hundreds of MB read. The answer is kept beside the
+ * booted disc ("<disc>.en.packs"), so this is done once; the website ships it
+ * with the game data, so a player's first start does not download the whole
+ * of ACE.BPB first. It is keyed by everything the answer depends on: both
+ * discs' English and original indexes and the English versions' sizes. */
+#define PACKS_MAGIC "AC3PACK1"
+static u64 packs_key(const u8 *const idx[4], u32 size) {
+    u64 h = 0xCBF29CE484222325ull;
+    for (int i = 0; i < 4; i++)
+        for (u32 k = 0; k < size; k++) { h ^= idx[i][k]; h *= 0x100000001B3ull; }
+    for (int i = 0; i < 2; i++) {
+        u64 v[3] = { (u64)discs[i].sectors, (u64)discs[i].src_sectors,
+                     discs[i].en ? (u64)ac3_en_overlay_literals(discs[i].en) : 0 };
+        for (int j = 0; j < 3; j++) { h ^= v[j]; h *= 0x100000001B3ull; }
+    }
+    return h;
+}
+static int packs_load(u64 key, u32 count) {
+    char path[1100];
+    snprintf(path, sizeof path, "%s.en.packs", discs[0].path);
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    char magic[8]; u64 k = 0; u32 n = 0;
+    int ok = fread(magic, 1, 8, f) == 8 && !memcmp(magic, PACKS_MAGIC, 8) &&
+             fread(&k, 8, 1, f) == 1 && fread(&n, 4, 1, f) == 1 && k == key && n == count &&
+             n <= sizeof pack_kind && fread(pack_kind, 1, n, f) == n;
+    fclose(f);
+    for (u32 i = 0; ok && i < n; i++) ok = pack_kind[i] <= PACK_BOTH;
+    return ok;
+}
+static void packs_save(u64 key, u32 count) {
+    char path[1100];
+    snprintf(path, sizeof path, "%s.en.packs", discs[0].path);
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fwrite(PACKS_MAGIC, 1, 8, f); fwrite(&key, 8, 1, f); fwrite(&count, 4, 1, f);
+    fwrite(pack_kind, 1, count, f);
+    fclose(f);
+}
+
 static void split_packs(void) {
     static u8 original[2][KCD_SPH_MAX];
     if (!discs[0].en && !discs[1].en) return;
@@ -184,7 +225,10 @@ static void split_packs(void) {
         return;
     }
     u32 n[4] = { 0, 0, 0, 0 };
-    for (u32 k = 0; k < (u32)count; k++) {
+    const u8 *idx[4] = { pack_index[0], pack_index[1], original[0], original[1] };
+    u64 key = packs_key(idx, size);
+    int cached = packs_load(key, (u32)count);
+    for (u32 k = 0; k < (u32)count && !cached; k++) {
         const u8 *e = pack_index[0] + KCD_SPH_HEADER + 8u * k;
         const u8 *o = pack_index[1] + KCD_SPH_HEADER + 8u * k;
         const u8 *j = original[0] + KCD_SPH_HEADER + 8u * k;
@@ -201,8 +245,9 @@ static void split_packs(void) {
             here = there = 0;
         pack_kind[k] = here && there ? PACK_BOTH : here ? PACK_ONLY_BOOTED :
                        there ? PACK_ONLY_OTHER : PACK_SAME;
-        n[pack_kind[k]]++;
     }
+    if (!cached) packs_save(key, (u32)count);
+    for (u32 k = 0; k < (u32)count; k++) n[pack_kind[k]]++;
     for (u32 k = 0; k < (u32)count; k++) {
         u8 *o = pack_index[1] + KCD_SPH_HEADER + 8u * k + 4;
         wr32(o, discs[1].base + o_pack + rd32(o) - pack_lba);

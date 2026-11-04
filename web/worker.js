@@ -301,6 +301,8 @@ self.onmessage = async (e) => {
       const f = m.remote.files;
       m.discs = ['disc1', 'disc2'].filter(n => f[n]).map(n => new RemoteFile(n, n + '.bin', f[n].size));
       if (f.en1) m.caches = [1, 2].filter(d => f['en' + d]).map(d => ({ disc: d, file: new RemoteFile('en' + d, `en${d}.cache`, f['en' + d].size) }));
+      // which English ACE.BPB records differ by disc, worked out once (runtime/hle/cd_discs.c split_packs)
+      if (f.packs) m.packs = new RemoteFile('packs', 'en.packs', f.packs.size);
     }
 
     // 1. identify the discs by their volume ID, whatever the files are called
@@ -344,6 +346,7 @@ self.onmessage = async (e) => {
     const blobs = [];
     for (const n of [1, 2]) if (discs[n]) blobs.push({ name: DISC_NAME(n), data: discs[n] });
     for (const c of m.caches) { blobs.push({ name: DISC_NAME(c.disc) + '.en.cache', data: c.file }); providedCaches.add(c.disc); }
+    if (m.packs && discs[1]) blobs.push({ name: DISC_NAME(1) + '.en.packs', data: m.packs });
     const patches = m.patches.map(p => ({ name: `[ProjectNEMO] AC3e CD${p.disc} English.xdelta`, data: p.file }));
 
     const args = ['--boot', '--window', '--frames', '0', '--exe', '/game/ACE3.BIN',

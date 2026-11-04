@@ -154,6 +154,7 @@ static void image_english(disc_image_t *d, const char *path) {
 
 int image_open(disc_image_t *d, const char *path) {
     memset(d, 0, sizeof *d);
+    snprintf(d->path, sizeof d->path, "%s", path);
     d->fp = fopen(path, "rb");
     if (!d->fp) {
         fprintf(stderr, "ac3: cannot open disc image %s\n", path);

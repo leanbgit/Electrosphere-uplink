@@ -3,10 +3,13 @@
 make_gamedata.py -- prepares the game data the website streams to players.
 
     python tools/make_gamedata.py <disc1.bin> <disc2.bin> <out_dir>
-                                  [--en1 disc1.en.cache --en2 disc2.en.cache]
+                                  [--en1 disc1.en.cache --en2 disc2.en.cache
+                                   --packs disc1.en.packs]
 
 Splits the two raw disc images (and, optionally, the prebuilt English data,
-so players skip the minute-long English build) into 4 MiB pieces under
+so players skip the minute-long English build, and the comparison of the two
+discs' English ACE.BPB, which would otherwise read most of both discs before
+the game starts) into 4 MiB pieces under
 <out_dir>/v<id>/<name>/NNN.bin and writes <out_dir>/manifest.json. The
 website's data worker (web/data-worker.js) fetches the pieces it needs,
 keeps them in the browser's storage, and serves them to the game.
@@ -73,6 +76,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('disc1'); ap.add_argument('disc2'); ap.add_argument('out_dir')
     ap.add_argument('--en1'); ap.add_argument('--en2')
+    ap.add_argument('--packs', help='<disc 1>.en.packs, written beside disc 1 by an English start of the game')
     a = ap.parse_args()
     check_disc(a.disc1, 'ACE3ES1')
     check_disc(a.disc2, 'ACE3ES2')
@@ -81,6 +85,9 @@ def main():
         inputs += [('en1', a.en1), ('en2', a.en2)]
     elif a.en1 or a.en2:
         sys.exit('give both --en1 and --en2, or neither')
+    if a.packs:
+        if not a.en1: sys.exit('--packs goes with --en1 and --en2')
+        inputs.append(('packs', a.packs))
 
     files = {}
     for name, path in inputs:

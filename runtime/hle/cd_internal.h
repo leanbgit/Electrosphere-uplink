@@ -41,6 +41,7 @@ typedef struct {
     int   number;            /* 1 or 2 */
     ac3_en_overlay_t *en;    /* the English version, or NULL */
     long  src_sectors;       /* sectors in the file itself */
+    char  path[1024];        /* the image file (for files kept beside it) */
 } disc_image_t;
 
 /* ---- cd_image.c ----------------------------------------------------------- */
