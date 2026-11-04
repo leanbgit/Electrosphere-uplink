@@ -51,7 +51,6 @@ async function startGame(onlineSession) {
     dataWorker.postMessage({ type: 'game', port: ch.port2, sab }, [ch.port2]);
     remote = { port: ch.port1, sab, files: app.gameData.files };
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-    dataWorker.postMessage({ type: 'download' });          // store the rest while playing (the game's reads first)
   }
   // the English version: Project NEMO's patches, and the English data built
   // from them (stored in this browser, or prebuilt in the game data)
@@ -117,10 +116,22 @@ async function startAudio() {
   return ring;
 }
 
+// The rest of the game data is stored in the background while playing, but
+// only from a while after the game is up: during start-up it would compete
+// with the game's own reads (and the browser storage writes hold the data
+// worker up), so the game started much later.
+const FILL_AFTER_MS = 15000;
+let fillTimer = 0;
+function fillLater() {
+  if (fillTimer) return;                             // once per game
+  const w = worker;
+  fillTimer = setTimeout(() => { if (app.running && worker === w) dataWorker.postMessage({ type: 'download' }); }, FILL_AFTER_MS);
+}
+
 // messages from the game worker
 async function fromGame(e) {
   const m = e.data, online = app.online;
-  if (m.type === 'frame') { if (onFrame(m)) loader.hide('game'); }
+  if (m.type === 'frame') { if (onFrame(m)) { loader.hide('game'); fillLater(); } }
   else if (m.type === 'log') log(m.text);
   else if (m.type === 'progress') loaderStage(m.stage, m.disc, m.done, m.total);
   else if (m.type === 'hd-off') hdOff(m.text);
@@ -194,6 +205,7 @@ function stop() {
     worker = null;
   }
   if (audioCtx) { audioCtx.close(); audioCtx = null; audioNode = null; }
+  clearTimeout(fillTimer); fillTimer = 0;
   pauseFill();
   app.padView = null; app.running = false; $('stop').disabled = true; loader.cancel();
   document.body.classList.remove('live', 'hd'); $('screen-wrap').classList.remove('wide');
