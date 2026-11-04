@@ -14,13 +14,14 @@ async function player(browser, name) {
   await page.evaluate(n => {
     uplink.app.gameData = { version: 'test', files: {} }; uplink.app.gameDataState = 'ready';   // stand-in for the streamed game data
     window.started = null;
-    uplink.game.start = async o => { window.on = o; window.started = { role: o.net.role, delay: o.net.delay, card: o.card ? o.card.length : null, gfx: o.gfx, ring: !!o.net.inbound }; return true; };
+    uplink.game.start = async o => { window.on = o; window.started = { role: o.net.role, names: o.net.names, delay: o.net.delay, card: o.card ? o.card.length : null, gfx: o.gfx, ring: !!o.net.inbound }; return true; };
     document.getElementById('on-name').value = n;
   }, name);
   await page.click('#tab-online');                                             // the online panel is a tab
   return page;
 }
 const stateOf = p => p.evaluate(() => document.getElementById('on-state').textContent);
+const playBtn = p => p.evaluate(() => { const b = document.getElementById('start'); return { label: b.textContent.trim(), on: !b.disabled, hint: document.getElementById('idle-hint').textContent }; });
 const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).test(document.getElementById('on-state').textContent), re.source, { timeout: ms });
 
 (async () => {
@@ -35,6 +36,8 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
   await host.waitForFunction(() => /^NEMO-/.test(document.getElementById('on-roomcode').textContent));
   const code = await host.evaluate(() => document.getElementById('on-roomcode').textContent);
   check(true, `room ${code}`);
+  let b = await playBtn(host);
+  check(b.label === 'Play Online' && !b.on && /Waiting for another player/.test(b.hint), `in a room: the screen's button is Play Online, waiting (${JSON.stringify(b)})`);
   await guest.fill('#on-code', code.slice(5).toLowerCase());
   await guest.click('#on-join');
   await host.waitForFunction(() => /Rena asks to join \(with your code\)/.test(document.getElementById('on-requests').textContent));
@@ -44,12 +47,17 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
   check(true, 'guest: connected directly, checks passed, ready');
   await waitState(host, /Rena is ready/);
   check(await host.isEnabled('#on-go'), 'host: Start the game is enabled');
-  await host.click('#on-go');
+  b = await playBtn(host);
+  check(b.label === 'Play Online' && b.on, 'host: Play Online on the screen is enabled');
+  b = await playBtn(guest);
+  check(b.label === 'Play Online' && !b.on && /Waiting for Nemo/.test(b.hint), `guest: Play Online waits for the host (${JSON.stringify(b)})`);
+  await host.click('#start');                                                   // the screen's Play Online (the same as Start the game)
   await host.waitForFunction(() => window.started); await guest.waitForFunction(() => window.started);
   const hs = await host.evaluate(() => window.started), gs = await guest.evaluate(() => window.started);
   check(hs.role === 'host' && gs.role === 'guest', 'both games started, as host and guest');
   check(hs.delay === gs.delay && hs.delay >= 3, `the same input delay (${hs.delay} fields)`);
   check(JSON.stringify(hs.gfx) === JSON.stringify(gs.gfx), `the guest uses the host's graphics (${JSON.stringify(gs.gfx)})`);
+  check(JSON.stringify(hs.names) === '["Nemo","Rena"]' && JSON.stringify(gs.names) === '["Nemo","Rena"]', `both games get the usernames, host's first (${JSON.stringify(gs.names)})`);
   check(hs.card === gs.card, `the same memory card (${hs.card === null ? 'none' : hs.card + ' bytes'})`);
   check(await guest.evaluate(() => { const c = window.on.card; for (let i = 2; i < c.length; i++) if (c[i] !== ((i * 7 + 3) & 255)) return false; return c.length === 131072; }), 'the card arrives byte for byte');
   // the game's records go across the data channel, both ways
@@ -86,6 +94,8 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
   await g2.click('#on-leave');
   await waitState(h2, /disconnected|left/);
   check(true, 'the guest left: the host is told');
+  b = await playBtn(g2);
+  check(b.label === 'Play' && !(await g2.isHidden('#to-online')), `left the room: the button is Play again (${b.label})`);
   await g3.click('#on-refresh');
   await g3.waitForFunction(() => /Abyss/.test(document.getElementById('on-rooms').textContent), null, { timeout: 5000 });
   check(true, 'Refresh: the room is open again and listed');

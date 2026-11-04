@@ -218,6 +218,6 @@ export const game = { start: startGame, stop };
 
 export function initGame() {
   $('volume').oninput = () => audioNode && audioNode.port.postMessage({ volume: $('volume').value / 100 });
-  $('start').onclick = () => game.start(null);
+  $('start').onclick = () => app.lobby ? app.lobby.go() : game.start(null);
   $('stop').onclick = () => { stop(); $('status').textContent = 'Stopped.'; };
 }

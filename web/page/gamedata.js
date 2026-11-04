@@ -46,9 +46,13 @@ async function forgetAll() {
 }
 
 // The Play button, the language readout and the hint on the idle screen.
+// In an online room (app.lobby) the button is Play Online: it starts the
+// co-op game (the host's, once the other player is connected).
 export function renderReady() {
-  const ready = !!app.gameData;
-  $('start').disabled = !ready || app.running;
+  const ready = !!app.gameData, lobby = app.lobby;
+  $('start').disabled = !ready || app.running || (lobby && !lobby.canStart);
+  $('start').querySelector('span').textContent = lobby ? 'Play Online' : 'Play';
+  $('to-online').hidden = !!lobby;
   // always English (Project NEMO's patches ship with the site); a copy of the
   // site without them can only run the original Japanese text
   if ($('enhint')) $('enhint').textContent = !have.patch[1] ? 'This copy of the site is missing patches/CD1.xdelta, so the game will be in Japanese.'
@@ -58,7 +62,7 @@ export function renderReady() {
   $('ro-lang').textContent = have.patch[1] ? 'English' : 'Japanese';
   renderData();
   const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
-  $('idle-hint').textContent = (ready ? '' : app.gameDataState === 'loading' ? 'Getting the game ready…' : 'The game data could not be loaded from this site (see the log).') +
+  $('idle-hint').textContent = (ready ? (lobby ? lobby.hint : '') : app.gameDataState === 'loading' ? 'Getting the game ready…' : 'The game data could not be loaded from this site (see the log).') +
     (touchOnly ? ' You will need a keyboard or a game controller: touch controls are not available yet.' : '');
 }
 

@@ -14,7 +14,7 @@
 //    controller 2; the guest's game never saves to the guest's browser.
 import { log, app } from './common.js';
 import { cardGet } from './storage.js';
-import { have } from './gamedata.js';
+import { have, renderReady } from './gamedata.js';
 import { gfxBits } from './graphics.js';
 import { game } from './game.js';
 // NetRing (web/netplay.js, a plain script shared with the game worker) is a global.
@@ -63,6 +63,16 @@ function view(inRoom) {
   el('on-hostbits').hidden = S.role !== 'host';
   el('on-go').hidden = S.role !== 'host';
   el('on-go').disabled = !S.ready || S.started;
+  // the Play button on the game screen becomes Play Online while in a room
+  app.lobby = inRoom ? { canStart: S.role === 'host' && S.ready && !S.started, hint: lobbyHint(), go } : null;
+  renderReady();
+}
+function lobbyHint() {
+  if (S.started) return '';
+  if (S.role === 'asking') return 'Waiting for the host to let you in…';
+  if (S.role === 'guest') return `Waiting for ${S.peer || 'the host'} to start the game…`;
+  if (!S.peer || !S.pc) return 'Waiting for another player to join your room…';   // (no connection: none yet, or they left)
+  return S.ready ? `${S.peer} is ready.` : `Connecting to ${S.peer}…`;
 }
 function needDiscs() {          // the game data, streamed from the site (gamedata.js)
   if (app.gameData) return false;
