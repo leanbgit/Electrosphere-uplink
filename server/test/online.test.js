@@ -1,6 +1,6 @@
-// two players on the real page (site/ via wrangler dev): rooms, WebRTC, the set-up talk, both games told to start
+// two players on the real page (site/ via wrangler dev): rooms, the host's approval, WebRTC, the set-up talk, both games told to start
 const { chromium } = require('playwright');
-const URL = 'http://localhost:8787/';
+const URL = process.argv[2] || 'http://localhost:8787/';
 let failed = 0;
 const check = (ok, what) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
 
@@ -37,6 +37,9 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
   check(true, `room ${code}`);
   await guest.fill('#on-code', code.slice(5).toLowerCase());
   await guest.click('#on-join');
+  await host.waitForFunction(() => /Rena asks to join \(with your code\)/.test(document.getElementById('on-requests').textContent));
+  check(await guest.evaluate(() => /Asking the host/.test(document.getElementById('on-state').textContent)), 'joining by code: the guest waits for the host');
+  await host.click('#on-requests button:has-text("Accept")');
   await waitState(guest, /Waiting for Nemo to start/);
   check(true, 'guest: connected directly, checks passed, ready');
   await waitState(host, /Rena is ready/);

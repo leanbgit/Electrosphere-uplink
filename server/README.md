@@ -40,11 +40,31 @@ playwright`):
 
 - `node test/rooms.test.js` checks the room protocol: codes, private and
   public rooms, the host's approval, full rooms, versions and leaving.
+- `node test/limits.test.js` checks the limits: wrong codes, messages per
+  second, connections per address, people waiting, other sites refused,
+  names cleaned.
 - `node test/online.test.js` drives two players on the real page in headless
   Chromium: room, direct connection, checks, memory card, start, game data
   both ways, goodbye.
+- `node test/peer.test.js` plays a modified guest and modified hosts on the
+  real page: what each side refuses from the other.
+
+`limits.test.js` sends 200 messages in one go on purpose; run it at most
+about once a minute, or its per-address checks see the previous run.
 
 ## Limits
+
+- **Abuse limits** (`LIMIT` in `src/index.js`):
+  - 20 messages a second per connection, bursts of 60;
+  - 5 wrong codes a minute;
+  - 6 connections per network address;
+  - 3 people waiting per room.
+
+  Cloudflare's free plan has a daily allowance for the room server (100,000
+  requests, with WebSocket messages counted 20 to 1). Once the site is on
+  your own domain, a Cloudflare rate-limiting rule for `/api/ws` adds a second
+  layer in front of the Worker (the free plan includes one rule; rules apply
+  to domains, not to `workers.dev`).
 
 - **No relay (TURN) yet.** Two browsers that cannot reach each other
   directly (some strict home routers, many mobile and university networks)

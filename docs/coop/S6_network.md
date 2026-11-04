@@ -14,8 +14,10 @@ A Cloudflare Worker serves the site and, at `/api/ws`, the room server
 public rooms, passes join requests and the connection offers along, and tells
 each side when the other leaves.
 
-- **Code** `NEMO-XXXX` (4 letters or digits, no 0/O/1/I). Joining with the
-  code is immediate: knowing it is the host's permission.
+- **Code** `NEMO-XXXX` (4 letters or digits, no 0/O/1/I), from a secure
+  random source. Joining with the code asks the host (Accept / Decline),
+  the same as joining from the list. The two browsers only start connecting,
+  and so only see each other's network address, once the host accepts.
 - **Public room:** listed with the host's name, but not its code. Joining
   from the list asks the host (Accept / Decline).
 - **One guest per room.** A room with two players, or whose game has
@@ -24,9 +26,20 @@ each side when the other leaves.
   match, or the join is refused.
 - **Hibernation API:** everything about a connection is in its attachment, so
   the Durable Object can sleep between messages.
+- **Limits** (security audit, M1 and M3):
+  - 20 messages a second per connection, in bursts of up to 60;
+  - 5 wrong codes a minute, per connection and per network address;
+  - 6 connections per network address;
+  - 3 people waiting for one host's answer, and one request per person.
 
-Checked: `server/test/rooms.test.js`, 17 checks on Cloudflare's local
-runtime (`wrangler dev`).
+  A connection over a limit gets a message saying why, then is closed. Only
+  the site's own pages may connect (`Origin`). Names lose invisible and
+  direction-changing characters. Local tests (loopback) aren't limited per
+  address.
+
+Checked on Cloudflare's local runtime (`wrangler dev`):
+`server/test/rooms.test.js` (the protocol, 18 checks) and
+`server/test/limits.test.js` (the limits and checks, 19 checks).
 
 ## The connection and the set-up (`web/page/online.js`)
 
@@ -39,8 +52,15 @@ runtime (`wrangler dev`).
    whether it has WebGPU. The host refuses a guest with a different site
    version, different game data or a different language. (Players can no
    longer use their own disc files, so both run exactly the same data.)
+   The guest repeats its hello every 1.5 s until the host answers: the first
+   message on a new channel is sometimes never delivered. The host answers a
+   repeat by sending its set-up again, at most 10 times.
 3. **Set-up:** the host sends its graphics settings (resolution and option
-   bits) and its memory card (base64, 128 KB).
+   bits) and its memory card (base64, 128 KB). Each side only acts on the
+   messages the other side may send (security audit, H1): a guest can't send
+   a set-up or start the host's game. The guest checks the set-up before using
+   it (a 128 KB card starting with `MC`, a resolution the page offers, known
+   option bits, an input delay of 3 to 15) and refuses anything else.
    - The guest refuses if the host plays Enhanced with widescreen or
      atmosphere (they change the game itself) and the guest's browser has no
      WebGPU.
@@ -61,10 +81,12 @@ runtime (`wrangler dev`).
    one too. The other game then stops waiting and plays on with a neutral
    controller for the player who left.
 
-Checked: `server/test/online.test.js` drives two players on the real page in
-headless Chromium against `wrangler dev`:
+Checked: `server/test/peer.test.js` plays a modified guest (trying to give
+the host its card and start the host's game) and modified hosts (invalid
+cards, settings and input delay) on the real page. `server/test/online.test.js`
+drives two players on the real page in headless Chromium against `wrangler dev`:
 
-- private room by code, and public room with the host's approval;
+- private room by code and public room, both with the host's approval;
 - direct connection and the checks;
 - the card arrives byte for byte;
 - both games start with the same delay and settings;

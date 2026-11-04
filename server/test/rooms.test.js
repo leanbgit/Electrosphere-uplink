@@ -30,7 +30,7 @@ function client(label) {
 
 (async () => {
   const V = 'test-1';
-  // a private room, joined by its code: no question to the host
+  // a private room, joined by its code: the host is asked too
   const host = client('host'); await host.open;
   host.send({ t: 'host', name: 'Nemo', public: false, version: V });
   const room = await host.next('room');
@@ -40,10 +40,14 @@ function client(label) {
   check(!(await look.next('rooms')).rooms.some(r => r.id === room.id), 'a private room is not listed');
   const g = client('guest'); await g.open;
   g.send({ t: 'join', code: room.code.slice(5).toLowerCase(), name: 'Rena', version: V });
+  const creq = await host.next('request');
+  check(creq.name === 'Rena' && creq.via === 'code', 'joining by code: the host is asked');
+  g.send({ t: 'signal', data: { sdp: 'too-early' } });
+  host.send({ t: 'answer', to: creq.from, accept: true });
   const gj = await g.next('joined'), hj = await host.next('joined');
-  check(gj.peer === 'Nemo' && hj.peer === 'Rena', 'joining by code: both told, with names');
+  check(gj.peer === 'Nemo' && hj.peer === 'Rena', 'accepted: both told, with names');
   g.send({ t: 'signal', data: { sdp: 'offer-from-guest' } });
-  check((await host.next('signal')).data.sdp === 'offer-from-guest', 'signals reach the host');
+  check((await host.next('signal')).data.sdp === 'offer-from-guest', 'signals reach the host (none before the host accepted)');
   host.send({ t: 'signal', data: { sdp: 'answer' } });
   check((await g.next('signal')).data.sdp === 'answer', 'signals reach the guest');
   const late = client('late'); await late.open;
@@ -62,7 +66,7 @@ function client(label) {
   check((await old.next('version')).want === V, 'a different site version is refused');
   look.send({ t: 'join', id: r2.id, name: 'Looker', version: V });
   const req = await h2.next('request');
-  check(req.name === 'Looker', 'the host is asked');
+  check(req.name === 'Looker' && req.via === 'list', 'the host is asked');
   h2.send({ t: 'answer', to: req.from, accept: false });
   check(!!(await look.next('declined')), 'declined');
   look.send({ t: 'join', id: r2.id, name: 'Looker', version: V });

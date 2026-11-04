@@ -1,8 +1,9 @@
 // online.js -- online co-op on the main page (docs/coop/S6_network.md).
 //
 // 1. Rooms: the room server (server/, a WebSocket at /api/ws) gives the host a
-//    code; a public room is also listed. Joining with the code is immediate;
-//    joining from the list asks the host first.
+//    code; a public room is also listed. Joining, with the code or from the
+//    list, asks the host first: the browsers only connect (and so only learn
+//    each other's network address) once the host accepts.
 // 2. The two browsers then connect directly (WebRTC data channel; the room
 //    server only passes the connection offers along). No relay yet: some
 //    networks cannot connect directly, and the page says so.
@@ -24,7 +25,29 @@ const FIELD_MS = 1000 / 59.94;
 const S = {
   ws: null, role: null, code: null, peer: '', pc: null, dc: null, pending: [],
   version: '', hello: null, setup: null, ready: false, rtt: [], inbound: null, started: false, timer: 0,
+  setupOk: false,          // guest: the host's set-up was valid and we answered "ready"
+  helloTimer: 0, repeats: 0, refusal: null, refused: false,   // the hello, repeated until answered (channel())
 };
+// Which set-up messages each side may receive (security audit, H1): the guest
+// must never be able to give the host a memory card or settings, or start its game.
+const FROM_HOST = new Set(['hello', 'setup', 'go', 'refuse', 'ping', 'pong', 'bye']);
+const FROM_GUEST = new Set(['hello', 'ready', 'refuse', 'ping', 'pong', 'bye']);
+const CARD_BYTES = 131072;
+const GFX_SCALES = [0, 2, 3, 4, 6];       // the page's "Graphics" choices (index.html, #gfx)
+const GFX_BITS = 1023;                    // the option bits (index.html, data-bit)
+const DELAY_MIN = 3, DELAY_MAX = 15;      // delayFor()
+// the host's set-up, checked before the guest uses it; returns the problem or ''
+function badSetup(m) {
+  const g = m.gfx;
+  if (!g || typeof g !== 'object' || !GFX_SCALES.includes(g.scale) || !Number.isInteger(g.bits) || g.bits < 0 || (g.bits & ~GFX_BITS)) return 'graphics settings';
+  if (m.card !== null) {
+    if (typeof m.card !== 'string' || m.card.length > 4 * CARD_BYTES / 3 + 4) return 'memory card';
+    let c; try { c = unb64(m.card); } catch { return 'memory card'; }
+    if (c.length !== CARD_BYTES || c[0] !== 0x4D || c[1] !== 0x43) return 'memory card';
+  }
+  return '';
+}
+const goodDelay = d => Number.isInteger(d) && d >= DELAY_MIN && d <= DELAY_MAX;
 const el = id => document.getElementById(id);
 const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
@@ -95,9 +118,10 @@ function fromServer(m) {
     }
     break;
   }
-  case 'request': {                                // host: someone from the public list
+  case 'request': {                                // host: someone asks to join (with the code, or from the list)
     const li = document.createElement('li'), ok = document.createElement('button'), no = document.createElement('button');
-    li.textContent = `${m.name} asks to join `;
+    li.dataset.from = m.from;
+    li.textContent = `${m.name} asks to join${m.via === 'code' ? ' (with your code)' : ''} `;
     ok.className = 'small'; ok.textContent = 'Accept'; no.className = 'quiet small'; no.textContent = 'Decline';
     ok.onclick = () => { toServer({ t: 'answer', to: m.from, accept: true }); li.remove(); };
     no.onclick = () => { toServer({ t: 'answer', to: m.from, accept: false }); li.remove(); };
@@ -112,7 +136,12 @@ function fromServer(m) {
     view(true);
     if (S.role === 'host') connectHost();
     break;
+  case 'withdrawn':                                // host: they stopped asking
+    for (const li of el('on-requests').children) if (li.dataset.from === m.from) li.remove();
+    break;
   case 'declined': state('The host declined.', 'bad'); leave(true); break;
+  case 'busy': state('Too many people are already asking to join that room. Try again in a moment.', 'bad'); leave(true); break;
+  case 'limit': state(String(m.text || 'The room server closed the connection.').slice(0, 200), 'bad'); leave(true); break;
   case 'full': state('That room already has two players.', 'bad'); leave(true); break;
   case 'unknown': state('No room with that code.', 'bad'); leave(true); break;
   case 'version': state('That room runs a different version of the site. Both players need to reload the page.', 'bad'); leave(true); break;
@@ -139,7 +168,7 @@ async function join(how) {
   try {
     await server();
     S.role = 'asking';
-    state(how.id ? 'Asking the host…' : 'Joining…');
+    state('Asking the host…');
     toServer({ t: 'join', ...how, name: name(), version: await version() });
     view(true);
   } catch (e) { state(e.message, 'bad'); }
@@ -189,7 +218,8 @@ async function signal(d) {
 function closePeer() {
   if (S.dc) { S.dc.onclose = null; S.dc.close(); }
   if (S.pc) S.pc.close();
-  S.dc = S.pc = null; S.pending = []; S.ready = false; S.hello = null; S.setup = null; S.rtt = [];
+  S.dc = S.pc = null; S.pending = []; S.ready = false; S.hello = null; S.setup = null; S.setupOk = false; S.rtt = [];
+  S.refusal = null; S.refused = false; S.repeats = 0; clearInterval(S.helloTimer);
   clearTimeout(S.timer);
 }
 
@@ -200,13 +230,26 @@ function channel(dc) {
   dc.onopen = async () => {
     clearTimeout(S.timer);
     state(`Connected to ${S.peer}. Checking that you can play together…`);
-    send({ t: 'hello', version: await version(), data: app.gameData ? app.gameData.version : null,
-           english: !!have.patch[1], gpu: !!navigator.gpu });
+    const hello = { t: 'hello', version: await version(), data: app.gameData ? app.gameData.version : null,
+                    english: !!have.patch[1], gpu: !!navigator.gpu };
+    send(hello);
+    // The first message on a new channel is sometimes never delivered (seen in
+    // Chrome when the guest's channel is already open as it appears): the guest
+    // repeats its hello until the host answers; the host answers a repeat by
+    // sending its set-up (or its refusal) again.
+    if (S.role !== 'host') {
+      clearInterval(S.helloTimer);
+      S.helloTimer = setInterval(() => {
+        if (S.dc !== dc || dc.readyState !== 'open' || S.setupOk || S.refused) return clearInterval(S.helloTimer);
+        send(hello);
+      }, 1500);
+    }
     for (let i = 0; i < 5; i++) setTimeout(() => send({ t: 'ping', at: performance.now() }), 200 * i);
   };
   dc.onmessage = e => {
     if (typeof e.data !== 'string') { if (S.inbound) NetRing.write(S.inbound, e.data); return; }
     let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (!m || typeof m !== 'object' || !(S.role === 'host' ? FROM_GUEST : FROM_HOST).has(m.t)) return;
     control(m);
   };
   dc.onclose = () => {
@@ -220,15 +263,20 @@ const send = m => { if (S.dc && S.dc.readyState === 'open') S.dc.send(JSON.strin
 
 async function control(m) {
   switch (m.t) {
-  case 'ping': send({ t: 'pong', at: m.at }); break;
-  case 'pong': S.rtt.push(performance.now() - m.at); break;
+  case 'ping': if (typeof m.at === 'number') send({ t: 'pong', at: m.at }); break;
+  case 'pong': if (typeof m.at === 'number' && S.rtt.length < 20) S.rtt.push(performance.now() - m.at); break;
   case 'hello': {
+    if (S.role !== 'host') { S.hello = m; break; }
+    if (S.hello) {                                      // once per connection; a repeat: answer again (up to 10 times)
+      if (S.started || ++S.repeats > 10) break;
+      if (S.refusal) send(S.refusal); else if (S.setup) send(S.setup);
+      break;
+    }
     S.hello = m;
-    if (S.role !== 'host') break;
     const problem = m.version !== await version() ? 'a different version of the site'
       : m.data !== (app.gameData && app.gameData.version) ? 'different game data'
       : m.english !== !!have.patch[1] ? 'a different language' : '';
-    if (problem) { send({ t: 'refuse', why: `Your copy has ${problem}.` }); state(`${S.peer} cannot play: ${problem}.`, 'bad'); break; }
+    if (problem) { S.refusal = { t: 'refuse', why: `Your copy has ${problem}.` }; send(S.refusal); state(`${S.peer} cannot play: ${problem}.`, 'bad'); break; }
     const card = await cardGet(0);
     S.setup = { t: 'setup', gfx: { scale: navigator.gpu ? +el('gfx').value : 0, bits: gfxBits() },
                 card: card ? b64(card.data) : null };
@@ -236,24 +284,40 @@ async function control(m) {
     break;
   }
   case 'setup': {                                       // the guest: can this browser use the host's settings?
-    S.setup = m;
-    const g = m.gfx;
+    if (S.setup || S.started) {                           // once per connection (a repeat: our "ready" may be lost too)
+      if (S.setupOk && !S.started) send({ t: 'ready' });
+      break;
+    }
+    const bad = badSetup(m);
+    if (bad) {
+      send({ t: 'refuse', why: `Their browser could not use your ${bad}.` });
+      state(`The host sent an invalid ${bad}. Ask them to reload the page and try again.`, 'bad');
+      break;
+    }
+    S.setup = { t: 'setup', gfx: { scale: m.gfx.scale, bits: m.gfx.bits }, card: m.card };
+    const g = S.setup.gfx;
     if (g.scale > 0 && (g.bits & (1 | 64)) && !navigator.gpu) {
       send({ t: 'refuse', why: 'Their browser cannot do Enhanced graphics, and your widescreen or atmosphere setting needs it.' });
       state('The host plays with Enhanced graphics and widescreen or atmosphere, which this browser cannot do (it needs WebGPU).', 'bad');
       break;
     }
+    S.setupOk = true;
     send({ t: 'ready' });
     state(`Ready. Waiting for ${S.peer} to start the game…`, 'ok');
     break;
   }
   case 'ready':
+    if (!S.setup) break;                                  // only after the host's set-up went out
     S.ready = true;
     state(`${S.peer} is ready. Press Start the game when you are.`, 'ok');
     view(true);
     break;
-  case 'refuse': state(m.why, 'bad'); break;
-  case 'go': start(m.delay); break;
+  case 'refuse': S.refused = true; state(String(m.why || 'The other player cannot play.').slice(0, 200), 'bad'); break;
+  case 'go':                                              // the guest: the host pressed Start
+    if (!S.setupOk || S.started) break;
+    if (!goodDelay(m.delay)) { state('The host sent an invalid input delay. Ask them to reload the page and try again.', 'bad'); break; }
+    start(m.delay);
+    break;
   case 'bye': if (S.inbound) NetRing.write(S.inbound, new Int32Array([NET_BYE, 0, 0, 0])); state(`${S.peer} left the game.`, 'bad'); break;
   }
 }
