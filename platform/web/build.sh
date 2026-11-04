@@ -96,6 +96,7 @@ cp web/index.html web/style.css web/worker.js web/data-worker.js web/netplay.js 
 cp web/test/coop.html web/test/coop.js web/test/coop.css "$OUT/"         # development: local co-op test page (not part of site/)
 mkdir -p "$OUT/page" && cp web/page/*.js "$OUT/page/"            # the page's modules (index.html)
 mkdir -p "$OUT/fonts" && cp web/fonts/* "$OUT/fonts/"
+mkdir -p "$OUT/icons" && cp web/icons/* "$OUT/icons/"            # the About links' logos
 # Project NEMO's English patches (included with their permission)
 if [ -f web/patches/CD1.xdelta ]; then mkdir -p "$OUT/patches" && cp web/patches/CD?.xdelta "$OUT/patches/"; fi
 printf '@echo off\r\ncd /d "%%~dp0"\r\npython serve.py\r\npause\r\n' > "$OUT/serve.bat"
@@ -115,6 +116,7 @@ if [ "$MODE" = public ] && [ "$HD" = 1 ]; then
   grep -q '^export const DEV = false;' site/page/common.js && grep -q '^const DEV = false;' site/worker.js && grep -q '^const DEV = false;' site/render-worker.js \
     || { echo "ERROR: could not turn the test hooks off in site/"; exit 1; }
   cp web/fonts/* site/fonts/
+  mkdir -p site/icons && cp web/icons/* site/icons/
   # Project NEMO's English patches (permission granted): web/patches/CD1.xdelta, CD2.xdelta
   if [ -f web/patches/CD1.xdelta ]; then mkdir -p site/patches && cp web/patches/CD?.xdelta site/patches/;
   else echo "note: web/patches/ is empty; add CD1.xdelta and CD2.xdelta to site/patches/ before uploading"; fi

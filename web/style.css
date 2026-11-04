@@ -242,6 +242,18 @@ button.keycap.flash { animation: keyflash .6s ease-out; }
 .lower section { padding-top: 18px; }
 .lower h2 { margin: 0 0 8px; font: 600 22px/1.2 var(--font-cond); }
 .lower p { margin: 0 0 10px; font-size: 15px; color: var(--ink-soft); max-width: 60ch; }
+.contact { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.contact a { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; color: var(--ink); text-decoration: none; padding: 6px 0; }
+.contact a:hover { color: var(--burn-lo); text-decoration: underline; text-underline-offset: 3px; }
+.contact a:focus-visible { outline: 2px solid var(--burn); outline-offset: 3px; border-radius: 4px; }
+/* the logos (icons/, from each site's brand assets) are masks painted in the
+ * text colour, so they follow light and dark mode and the hover colour */
+.contact .logo { width: 18px; height: 18px; flex: none; background: currentColor;
+  -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.logo-discord { -webkit-mask-image: url(icons/discord.png); mask-image: url(icons/discord.png); }
+.logo-x       { -webkit-mask-image: url(icons/x.png);       mask-image: url(icons/x.png); }
+.logo-github  { -webkit-mask-image: url(icons/github.png);  mask-image: url(icons/github.png); }
 details.diag { border-top: 1px solid var(--rule); padding: 14px 0 6px; }
 details.diag summary { cursor: pointer; font: 600 18px/1.2 var(--font-cond); }
 #log { margin-top: 10px; height: 240px; overflow: auto; background: var(--panel-sunk); border-radius: 8px; padding: 10px; font: 12px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; color: var(--ink-soft); }
