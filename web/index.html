@@ -121,6 +121,12 @@
             <p>Card 1 lives in this browser. Keep a copy, or bring a save from an emulator or a DexDrive (.mcd, .mcr or .gme).</p>
             <div class="row"><button class="quiet small" id="export">Download card</button><button class="quiet small" id="importbtn">Load a card file</button><button class="quiet small" id="restorecard" hidden>Restore previous card</button><input type="file" id="import" accept=".mcd,.mcr,.gme" hidden></div>
           </div>
+          <div class="set-group">
+            <h4>Game data</h4>
+            <p id="gd-status">Checking…</p>
+            <p>The game (about 1.4 GB) is kept in this browser's own storage while you play, so later sessions do not download it again. It is not saved as a file on your computer.</p>
+            <div class="row"><button class="quiet small" id="gd-fill" hidden>Download it into this browser now</button><button class="quiet small" id="forget">Delete stored game data</button></div>
+          </div>
         </div>
       </div>
       <div class="panel" id="panel-online" role="tabpanel" aria-labelledby="tab-online" hidden>
@@ -176,7 +182,6 @@
 
   <details class="diag">
     <summary>Diagnostics</summary>
-    <p class="note">The game data the site streams is kept in this browser for faster starts. <button class="quiet small" id="forget">Forget stored game data</button></p>
     <div id="log" role="log"></div>
   </details>
 

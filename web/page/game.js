@@ -7,7 +7,7 @@
 // ring (SharedArrayBuffers); sound is played by audio-worklet.js.
 import { DEV, $, log, app } from './common.js';
 import { cardGet, cardPut, idbGet, idbPut } from './storage.js';
-import { have, dataWorker, renderReady } from './gamedata.js';
+import { have, dataWorker, renderReady, pauseFill } from './gamedata.js';
 import { gfxBits } from './graphics.js';
 import { onFrame, setHdSize } from './display.js';
 import { loader, loaderStage, buildingEnglish } from './loader.js';
@@ -51,6 +51,7 @@ async function startGame(onlineSession) {
     dataWorker.postMessage({ type: 'game', port: ch.port2, sab }, [ch.port2]);
     remote = { port: ch.port1, sab, files: app.gameData.files };
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+    dataWorker.postMessage({ type: 'download' });          // store the rest while playing (the game's reads first)
   }
   // the English version: Project NEMO's patches, and the English data built
   // from them (stored in this browser, or prebuilt in the game data)
@@ -174,6 +175,7 @@ function stop() {
     worker = null;
   }
   if (audioCtx) { audioCtx.close(); audioCtx = null; audioNode = null; }
+  pauseFill();
   app.padView = null; app.running = false; $('stop').disabled = true; loader.cancel();
   document.body.classList.remove('live', 'hd'); $('screen-wrap').classList.remove('wide');
   $('fps').textContent = '–'; $('ro-gfx').textContent = '–'; renderReady();

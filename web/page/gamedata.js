@@ -13,6 +13,7 @@ import { idbDel, opfs } from './storage.js';
 export const have = { patch: {} };                   // [1|2] = { url, src: 'bundled' }
 export const dataWorker = new Worker('data-worker.js');
 let dataStatus = null;                               // the data worker's last 'status'
+let fillAsked = false;                               // the player pressed "Download … now" (keeps going after Stop)
 const MB = n => (n / 1048576).toFixed(0);
 
 const discMark = d => `ac3.disc${d}`;               // set only once a copy is complete
@@ -28,14 +29,18 @@ export async function loadRemembered() {
 }
 
 async function forgetAll() {
+  const s = dataStatus;
+  if (!confirm(`Delete the game data stored in this browser${s && s.bytesHave ? ` (${MB(s.bytesHave)} MB)` : ''}? ` +
+               'It is downloaded again the next time you play. Your saves and settings are kept.')) return;
   const dir = await opfs();
   for (const d of [1, 2]) {
     localStorage.removeItem(discMark(d));
     if (dir) await dir.removeEntry(`disc${d}.bin`).catch(() => {});
     await idbDel('patches', d); await idbDel('encache', d);
   }
+  fillAsked = false;
   dataWorker.postMessage({ type: 'forget' });
-  log('Remembered disc images, downloaded game data and English data removed from this browser (saves kept).', 'ok');
+  log('Stored game data and English data removed from this browser (saves kept).', 'ok');
   await loadRemembered();
   renderReady();
 }
@@ -60,16 +65,40 @@ export function renderReady() {
 function renderData() {
   const el = $('gd-status');
   if (!el) return;                                  // (a page without the game data line)
+  if ($('forget')) $('forget').disabled = app.running || !dataStatus || !dataStatus.bytesHave;
   if (!app.gameData) { el.textContent = app.gameDataState === 'loading' ? 'Checking…' : 'Not available on this copy of the site.'; return; }
   const s = dataStatus;
-  // streamed only: the game fetches the parts it reads (kept in this browser's
-  // cache for next time); there is no "download everything"
-  el.textContent = !s || !s.bytesHave ? 'Streamed from this site: nothing to select.'
-    : `Streamed from this site. Kept in this browser for faster starts: ${MB(s.bytesHave)} MB.`;
+  // kept in this browser's own storage (data-worker.js), filled in while playing
+  el.textContent = !s ? 'Checking…'
+    : !s.stored ? 'This browser cannot store it (private window?): the game is downloaded as it plays.'
+    : s.bytesHave >= s.bytesTotal ? `All of it is stored in this browser (${MB(s.bytesTotal)} MB): the game plays without downloading.`
+    : !s.bytesHave ? 'Nothing stored yet: it downloads as you play.'
+    : `Stored in this browser: ${MB(s.bytesHave)} of ${MB(s.bytesTotal)} MB${s.background ? (app.running && !fillAsked ? ', filling in while you play' : ', downloading') : ''}.` +
+      (s.full ? ' The browser\'s storage is full.' : '');
+  // the whole game ahead of time (optional): into this browser's storage, not a file
+  const fill = $('gd-fill');
+  if (fill) {
+    fill.hidden = !s || !s.stored || s.full || s.bytesHave >= s.bytesTotal;
+    fill.disabled = app.running && !fillAsked;      // (while playing it fills in anyway)
+    fill.textContent = s && s.background && (fillAsked || !app.running) ? 'Pause the download'
+      : s && s.bytesHave ? 'Download the rest into this browser now' : 'Download it into this browser now';
+  }
+}
+
+// When a game stops, the background download stops too, unless the player
+// asked for it.
+export function pauseFill() {
+  if (!fillAsked) dataWorker.postMessage({ type: 'pause' });
+}
+
+function toggleFill() {
+  if (dataStatus && dataStatus.background) { fillAsked = false; dataWorker.postMessage({ type: 'pause' }); }
+  else { fillAsked = true; if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); dataWorker.postMessage({ type: 'download' }); }
 }
 
 export function initGameData() {
   if ($('forget')) $('forget').onclick = () => { if (!app.running) forgetAll(); };
+  if ($('gd-fill')) $('gd-fill').onclick = toggleFill;
   dataWorker.onmessage = e => {   // (renderData also runs from renderReady)
     const m = e.data;
     if (m.type === 'ready') { app.gameData = m.manifest; app.gameDataState = 'ready'; renderReady(); renderData(); }

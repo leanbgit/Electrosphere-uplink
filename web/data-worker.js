@@ -7,14 +7,17 @@
 //     blocks in Atomics.wait between fields): the game worker posts a request
 //     on a MessagePort and sleeps on a shared buffer; this worker answers by
 //     filling the buffer and waking it;
-//   - keeps every piece it has downloaded in the browser's private storage
-//     (OPFS, one file per disc), so later starts need no network;
-//   - downloads the rest in the background when asked to, nearest-needed first.
+//   - keeps everything it has downloaded in the browser's private storage
+//     (OPFS, one file per disc): whole pieces, and the 64 KiB blocks the game
+//     read before their piece was complete, so later starts need no network;
+//   - while a game runs ('download'), fills the rest in the background: the
+//     pieces the game is reading first (and the one after), then the rest in
+//     order. The game's own reads always come first.
 // Without OPFS (some private windows) it keeps the most recent pieces in memory.
 'use strict';
 
 let man = null;                 // manifest: { version, chunk, files: { name: { size, chunks } } }
-let store = null;               // name -> { handle (SyncAccessHandle) | null, have: Uint8Array, haveHandle }
+let store = null;               // name -> { handle (SyncAccessHandle) | null, have: Uint8Array, haveHandle, subHave: Uint8Array, subHandle }
 const inflight = new Map();     // 'name:i' -> Promise<void>
 const mem = new Map();          // fallback without OPFS: 'name:i' -> Uint8Array (LRU)
 const MEM_MAX = 48;
@@ -40,15 +43,19 @@ async function init(url) {
     dir = await root.getDirectoryHandle('gamedata-' + man.version, { create: true });
   } catch { dir = null; }
   for (const [name, f] of Object.entries(man.files)) {
-    const s = { handle: null, have: new Uint8Array(f.chunks), haveHandle: null };
+    const s = { handle: null, have: new Uint8Array(f.chunks), haveHandle: null,
+                subHave: new Uint8Array(Math.ceil(f.size / SUB)), subHandle: null };
     if (dir && typeof FileSystemFileHandle !== 'undefined' && FileSystemFileHandle.prototype.createSyncAccessHandle) {
       try {
         s.handle = await (await dir.getFileHandle(name + '.img', { create: true })).createSyncAccessHandle();
         s.haveHandle = await (await dir.getFileHandle(name + '.have', { create: true })).createSyncAccessHandle();
+        s.subHandle = await (await dir.getFileHandle(name + '.subs', { create: true })).createSyncAccessHandle();
         const n = s.haveHandle.read(s.have, { at: 0 });
         if (n < f.chunks) s.have.fill(0, n);
-        if (s.handle.getSize() < f.size) s.handle.truncate(f.size);
-      } catch (e) { s.handle = null; s.haveHandle = null; s.have.fill(0); }
+        const k = s.subHandle.read(s.subHave, { at: 0 });
+        if (k < s.subHave.length) s.subHave.fill(0, k);
+        // (the image grows as pieces are written: no space is taken up front)
+      } catch (e) { s.handle = null; s.haveHandle = null; s.subHandle = null; s.have.fill(0); s.subHave.fill(0); }
     }
     store[name] = s;
   }
@@ -58,11 +65,12 @@ async function init(url) {
 function counts() {
   let have = 0, total = 0, bytesHave = 0, bytesTotal = 0;
   for (const [name, f] of Object.entries(man.files)) {
-    const h = store[name].have;
+    const h = store[name].have, sh = store[name].subHave, per = man.chunk / SUB;
     for (let i = 0; i < f.chunks; i++) {
       const sz = Math.min(man.chunk, f.size - i * man.chunk);
       total++; bytesTotal += sz;
       if (h[i]) { have++; bytesHave += sz; }
+      else for (let j = i * per; j < Math.min(sh.length, (i + 1) * per); j++) if (sh[j]) bytesHave += Math.min(SUB, f.size - j * SUB);
     }
   }
   return { have, total, bytesHave, bytesTotal };
@@ -146,7 +154,27 @@ function readInto(name, off, len, out) {
 // stored yet fetches only the 128 KiB blocks it touches (HTTP Range). The
 // background download still fetches and stores whole pieces.
 const SUB = 64 << 10, SUB_MAX = 1024;
-const subs = new Map(), subInflight = new Map();   // 'name:j' -> Uint8Array / Promise
+const subs = new Map(), subInflight = new Map();   // 'name:j' -> Uint8Array / Promise (blocks not stored)
+const hot = new Set();                              // 'name:i': pieces the game is reading (downloaded whole first)
+// block j is in the browser's storage (on its own, or as part of a whole piece)
+const blockStored = (name, j) => { const s = store[name]; return !!s.handle && (s.subHave[j] === 1 || s.have[Math.floor(j * SUB / man.chunk)] === 1); };
+// keep fetched blocks j0..j1 (b: their bytes) in storage; false: storage not usable
+function storeBlocks(name, j0, j1, b) {
+  const s = store[name];
+  if (!s.handle || storeFull) return false;
+  try {
+    if (s.handle.write(b, { at: j0 * SUB }) !== b.length) throw new Error('short write');
+    s.handle.flush();
+    s.subHave.fill(1, j0, j1 + 1);
+    s.subHandle.write(s.subHave.subarray(j0, j1 + 1), { at: j0 });
+    s.subHandle.flush();
+    return true;
+  } catch {
+    storeFull = true; background = false;
+    post({ type: 'log', text: 'game data: this browser\'s storage is full; the rest is downloaded when needed' });
+    return false;
+  }
+}
 let rangeOK = true;                                 // the host honours Range requests
 function pieceUrl(name, i) { return `gamedata/${man.version}/${name}/${String(i).padStart(3, '0')}.bin`; }
 // fetch blocks j0..j1 (same piece) in one request
@@ -164,8 +192,10 @@ function fetchSubs(name, j0, j1) {
         else throw new Error(`HTTP ${r.status}`);
         fetched += b.length; status(false);
         if (b.length !== end - start) throw new Error(`range of ${b.length} bytes, expected ${end - start}`);
-        for (let j = j0; j <= j1; j++) subs.set(name + ':' + j, b.subarray((j - j0) * SUB, Math.min(b.length, (j - j0 + 1) * SUB)));
-        while (subs.size > SUB_MAX) subs.delete(subs.keys().next().value);
+        if (!storeBlocks(name, j0, j1, b)) {
+          for (let j = j0; j <= j1; j++) subs.set(name + ':' + j, b.subarray((j - j0) * SUB, Math.min(b.length, (j - j0 + 1) * SUB)));
+          while (subs.size > SUB_MAX) subs.delete(subs.keys().next().value);
+        }
         return;
       } catch (e) { lastErr = e; await new Promise(res => setTimeout(res, 500 * (attempt + 1))); }
     }
@@ -181,7 +211,7 @@ function ensureSubs(name, j0, j1) {
   let run = -1;
   for (let j = j0; j <= j1 + 1; j++) {
     const key = name + ':' + j;
-    const missing = j <= j1 && !subs.has(key) && !subInflight.has(key);
+    const missing = j <= j1 && !subs.has(key) && !subInflight.has(key) && !blockStored(name, j);
     if (missing && run < 0) run = j;
     if (!missing && run >= 0) { waits.push(fetchSubs(name, run, j - 1)); run = -1; }
     if (j <= j1 && subInflight.has(key)) waits.push(subInflight.get(key));
@@ -200,6 +230,9 @@ async function gather(name, off, len, out) {
     if (!pieceReady(name, i)) {
       if (rangeOK) waits.push(ensureSubs(name, Math.floor(p / SUB), Math.floor((pe - 1) / SUB)));
       else waits.push(ensure(name, i));
+      // read ahead: this piece and the next are downloaded whole, next in line
+      hot.add(name + ':' + i);
+      if (i + 1 < f.chunks) hot.add(name + ':' + (i + 1));
     }
     p = pe;
   }
@@ -209,9 +242,13 @@ async function gather(name, off, len, out) {
     if (pieceReady(name, i)) readInto(name, p, pe - p, out.subarray(p - off));
     else for (let q = p; q < pe;) {
       const j = Math.floor(q / SUB), qe = Math.min(pe, (j + 1) * SUB);
-      let b = subs.get(name + ':' + j);
-      if (!b) { await ensureSub(name, j); b = subs.get(name + ':' + j); }
-      out.set(b.subarray(q - j * SUB, qe - j * SUB), q - off);
+      if (blockStored(name, j)) store[name].handle.read(out.subarray(q - off, qe - off), { at: q });
+      else {
+        let b = subs.get(name + ':' + j);
+        if (!b) { await ensureSub(name, j); b = subs.get(name + ':' + j); }
+        if (b) out.set(b.subarray(q - j * SUB, qe - j * SUB), q - off);
+        else store[name].handle.read(out.subarray(q - off, qe - off), { at: q });   // stored meanwhile
+      }
       q = qe;
     }
     p = pe;
@@ -242,6 +279,12 @@ function attachGame(port, sab) {
 
 // ---- background download of everything not stored yet
 function nextMissing() {
+  for (const key of hot) {                         // what the game is reading now
+    const [name, i] = [key.slice(0, key.lastIndexOf(':')), +key.slice(key.lastIndexOf(':') + 1)];
+    if (store[name].have[i] || inflight.has(key)) { hot.delete(key); continue; }
+    hot.delete(key);
+    return [name, i];
+  }
   for (const name of ORDER) {
     const f = man.files[name]; if (!f) continue;
     const h = store[name].have;
@@ -267,9 +310,15 @@ self.onmessage = async e => {
     else if (m.type === 'game') attachGame(m.port, m.sab);
     else if (m.type === 'download') { background = true; status(true); pump(); }
     else if (m.type === 'pause') { background = false; status(true); }
-    else if (m.type === 'forget') {
-      for (const s of Object.values(store)) { s.have.fill(0); if (s.haveHandle) { s.haveHandle.write(s.have, { at: 0 }); s.haveHandle.flush(); } }
-      mem.clear(); status(true);
+    else if (m.type === 'forget') {                 // the page's "Delete": frees the space too
+      background = false; hot.clear();
+      for (const s of Object.values(store)) {
+        s.have.fill(0); s.subHave.fill(0);
+        if (s.haveHandle) { s.haveHandle.truncate(0); s.haveHandle.write(s.have, { at: 0 }); s.haveHandle.flush(); }
+        if (s.subHandle) { s.subHandle.truncate(0); s.subHandle.flush(); }
+        if (s.handle) { s.handle.truncate(0); s.handle.flush(); }
+      }
+      mem.clear(); subs.clear(); storeFull = false; status(true);
     }
   } catch (err) {
     post({ type: m.type === 'init' ? 'unavailable' : 'error', text: String(err && err.message || err) });
