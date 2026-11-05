@@ -16,7 +16,9 @@ import { idbDel, opfs } from './storage.js';
 import { loader } from './loader.js';
 
 export const have = { disc: {}, patch: {} };          // [kind][1|2] = { file | url, src }
-let storing = 0;                                      // discs being copied into the browser's storage
+const storeQueue = [];                                // discs waiting to be copied into the browser's storage
+let storing = null;                                   // { d, pct } while one is being copied (one at a time)
+const notKept = {};                                   // [d] = why a selected disc could not be remembered
 const MB = n => (n / 1048576).toFixed(0);
 
 // Ace Combat 3 "Rev 1" (SLPS-02020/02021): both discs carry this ACE3.BIN.
@@ -99,7 +101,8 @@ async function classify(list) {
       }
       have.disc[d] = { file: f, src: 'selected' };
       log(`${f.name}: disc ${d} (Rev 1)`, 'ok');
-      if ($('remember').checked) storeDisc(d, f);    // runs in the background
+      delete notKept[d];
+      if ($('remember').checked) rememberLater(d, f);
     } else if (f.size === 0 && !f.type) {
       log(`${f.name}: a folder or an empty file. Select the .bin files themselves.`, 'dim');
     } else {
@@ -110,47 +113,89 @@ async function classify(list) {
 }
 
 // ---- remembered disc images: the origin private file system (OPFS)
+// The discs are copied one after the other (two copies at once would each
+// pass the space check and then run out of room together), with the progress
+// on the loading screen until the last one is done. Leaving the page during a
+// copy loses that disc, so the browser asks first.
 const discMark = d => `ac3.disc${d}`;               // set only once a copy is complete
+function rememberLater(d, file) {
+  const i = storeQueue.findIndex(x => x.d === d);
+  if (i >= 0) storeQueue.splice(i, 1);                // a newer selection of the same disc replaces it
+  storeQueue.push({ d, file });
+  if (!storing) storeNext();
+}
+async function storeNext() {
+  const next = storeQueue.shift();
+  if (!next) {
+    storing = null;
+    loader.hide('store');
+    $('storeprog').textContent = '';
+    renderReady();
+    return;
+  }
+  storing = { d: next.d, pct: 0 };
+  renderReady();
+  const why = await storeDisc(next.d, next.file);
+  if (why) notKept[next.d] = why;
+  storeNext();
+}
+addEventListener('beforeunload', e => { if (storing) { e.preventDefault(); e.returnValue = ''; } });
+
+// one disc into the browser's storage; returns why it failed, or '' when kept
 async function storeDisc(d, file) {
   const dir = await opfs();
-  if (!dir) return log('This browser cannot store disc images; select them again next visit.', 'dim');
+  if (!dir) { log('This browser cannot store disc images; select them again next visit.', 'dim'); return 'this browser cannot store it'; }
+  const label = `Remembering disc ${d} in this browser`;
+  let h = null;
   try {
-    const est = await navigator.storage.estimate();
-    const old = have.disc[d] && have.disc[d].src === 'stored' ? have.disc[d].file.size : 0;
-    if (est.quota - est.usage + old < file.size * 1.02)
-      return log(`Not enough browser storage to remember disc ${d} (needs ${MB(file.size)} MB).`, 'bad');
     if (navigator.storage.persist) await navigator.storage.persist();
-    const h = await dir.getFileHandle(`disc${d}.bin`, { create: true });
-    if (!h.createWritable) return log('This browser cannot write to its file storage; discs will not be remembered.', 'dim');
+    const est = await navigator.storage.estimate();
+    let old = 0;
+    try { old = (await (await dir.getFileHandle(`disc${d}.bin`)).getFile()).size; } catch { /* none yet */ }
+    const room = est.quota - est.usage + old;
+    if (room < file.size * 1.02) {
+      log(`Not enough browser storage to remember disc ${d}: it needs ${MB(file.size)} MB, ${MB(Math.max(0, room))} MB are free for this site. ` +
+          'It is used for this visit only; select it again next time (or free space on your computer).', 'bad');
+      return 'not enough browser storage';
+    }
+    h = await dir.getFileHandle(`disc${d}.bin`, { create: true });
+    if (!h.createWritable) { log('This browser cannot write to its file storage; discs will not be remembered.', 'dim'); return 'this browser cannot store it'; }
     localStorage.removeItem(discMark(d));
-    storing++; renderReady();
     const w = await h.createWritable(), rd = file.stream().getReader();
     let done = 0, last = 0;
-    for (;;) {
-      const { value, done: end } = await rd.read();
-      if (end) break;
-      await w.write(value);
-      done += value.length;
-      if (performance.now() - last > 250) {
-        last = performance.now();
-        const pct = done * 100 / file.size;
-        $('storeprog').textContent = `Remembering disc ${d}: ${Math.floor(pct)}%`;
-        if (!app.running) {
-          loader.show('store', `Remembering disc ${d} in this browser`, 'Only once: next time the discs load by themselves.');
-          loader.set('store', pct, pct);
+    try {
+      for (;;) {
+        const { value, done: end } = await rd.read();
+        if (end) break;
+        await w.write(value);
+        done += value.length;
+        if (performance.now() - last > 250) {
+          last = performance.now();
+          const pct = done * 100 / file.size;
+          storing.pct = pct;
+          const more = storeQueue.length ? ` (then disc ${storeQueue.map(x => x.d).join(', ')})` : '';
+          $('storeprog').textContent = `Remembering disc ${d}: ${Math.floor(pct)}%${more}. Keep this page open until it finishes.`;
+          if (!app.running) {
+            loader.show('store', label, 'Only once: next time the discs load by themselves. Keep this page open.');
+            loader.set('store', pct, pct);
+          }
+          renderList();
         }
       }
+      await w.close();
+    } catch (e) {
+      await w.abort().catch(() => {});
+      throw e;
     }
-    await w.close();
     localStorage.setItem(discMark(d), String(file.size));
     log(`Disc ${d} remembered in this browser; next time it loads by itself.`, 'ok');
+    return '';
   } catch (e) {
-    log(`Could not remember disc ${d}: ${e.message || e}`, 'bad');
-  } finally {
-    loader.hide('store');
-    storing = Math.max(0, storing - 1);
-    if (!storing) $('storeprog').textContent = '';
-    renderReady();
+    const full = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+    log(`Could not remember disc ${d}: ${full ? 'the browser storage for this site is full' : e.message || e}. ` +
+        'It is used for this visit only; select it again next time.', 'bad');
+    if (h) await dir.removeEntry(`disc${d}.bin`).catch(() => {});   // no half copy left taking space
+    return full ? 'not enough browser storage' : 'could not be stored';
   }
 }
 
@@ -201,22 +246,31 @@ async function forgetAll() {
 // starts the co-op game (the host's, once the other player is connected).
 const SRC = { selected: 'selected', stored: 'remembered in this browser' };
 export const discsReady = () => !!have.disc[1];
-export function renderReady() {
+function renderList() {
   const ul = $('files');
-  if (ul) {
-    ul.replaceChildren();
-    for (const d of [1, 2]) {
-      const x = have.disc[d], li = document.createElement('li');
-      li.textContent = x ? `Disc ${d}: ${SRC[x.src]} (${MB(x.file.size)} MB)` : `Disc ${d}: not selected`;
-      li.className = x ? 'ok' : 'dim';
-      ul.appendChild(li);
+  if (!ul) return;
+  ul.replaceChildren();
+  for (const d of [1, 2]) {
+    const x = have.disc[d], li = document.createElement('li');
+    let t = x ? `Disc ${d}: ${SRC[x.src]} (${MB(x.file.size)} MB)` : `Disc ${d}: not selected`;
+    if (x && x.src === 'selected') {
+      if (storing && storing.d === d) t += `, being remembered: ${Math.floor(storing.pct)}%`;
+      else if (storeQueue.some(q => q.d === d)) t += ', waiting to be remembered';
+      else if (notKept[d]) t += ` (not remembered: ${notKept[d]})`;
+      else if (localStorage.getItem(discMark(d)) === String(x.file.size)) t = `Disc ${d}: selected and remembered in this browser (${MB(x.file.size)} MB)`;
     }
+    li.textContent = t;
+    li.className = x ? 'ok' : 'dim';
+    ul.appendChild(li);
   }
+}
+export function renderReady() {
+  renderList();
   const ready = discsReady(), lobby = app.lobby;
   $('start').disabled = !ready || app.running || (lobby && !lobby.canStart);
   $('start').querySelector('span').textContent = lobby ? 'Play Online' : 'Play';
   $('to-online').hidden = !!lobby;
-  if ($('forget')) $('forget').disabled = app.running || storing > 0 || ![1, 2].some(d => localStorage.getItem(discMark(d)));
+  if ($('forget')) $('forget').disabled = app.running || !!storing || ![1, 2].some(d => localStorage.getItem(discMark(d)));
   // always English (Project NEMO's patches ship with the site); a copy of the
   // site without them can only run the original Japanese text
   if ($('enhint')) $('enhint').textContent = !have.patch[1] ? 'This copy of the site is missing patches/CD1.xdelta, so the game will be in Japanese.'
