@@ -1,13 +1,13 @@
 // game.js -- starting and stopping the game.
 //
-// Three workers: the game (worker.js, the game's program in WebAssembly), the
-// enhanced renderer (render-worker.js, WebGPU; only with Enhanced graphics),
-// and the streamed game data (data-worker.js, already running: gamedata.js).
+// Two workers: the game (worker.js, the game's program in WebAssembly, read
+// from the player's own discs: discs.js) and the enhanced renderer
+// (render-worker.js, WebGPU; only with Enhanced graphics).
 // The page shares with the game a control block, the controller and the sound
 // ring (SharedArrayBuffers); sound is played by audio-worklet.js.
 import { DEV, $, log, app } from './common.js';
 import { cardGet, cardPut, idbGet, idbPut } from './storage.js';
-import { have, dataWorker, renderReady, pauseFill } from './gamedata.js';
+import { have, renderReady, discsReady } from './discs.js';
 import { gfxBits } from './graphics.js';
 import { onFrame, setHdSize } from './display.js';
 import { loader, loaderStage, buildingEnglish } from './loader.js';
@@ -24,7 +24,7 @@ let audioCtx = null, audioNode = null;
 // Returns false if the game could not start.
 async function startGame(onlineSession) {
   if (!self.crossOriginIsolated) { $('status').textContent = 'This page cannot run the game: it is not cross-origin isolated. See Diagnostics.'; return false; }
-  if (!app.gameData) { $('status').textContent = 'The game data is not available on this site.'; return false; }
+  if (!discsReady()) { $('status').textContent = 'Add your game discs first (Settings, Game discs).'; return false; }
   const online = app.online = onlineSession;
   app.running = true; renderReady(); $('stop').disabled = false;
   document.body.classList.add('live');
@@ -41,19 +41,12 @@ async function startGame(onlineSession) {
   const padSab = new SharedArrayBuffer(7 * 4); app.padView = new Int32Array(padSab);
   const ring = await startAudio();
 
-  // the game data is streamed (data-worker.js): the game reads it through a port
+  // the player's discs (selected now, or remembered in this browser)
   const english = !!have.patch[1];
   buildingEnglish.length = 0;
-  const discs = [];
-  let remote = null;
-  {
-    const ch = new MessageChannel(), sab = new SharedArrayBuffer(16 + (1 << 20));
-    dataWorker.postMessage({ type: 'game', port: ch.port2, sab }, [ch.port2]);
-    remote = { port: ch.port1, sab, files: app.gameData.files };
-    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-  }
+  const discs = [1, 2].filter(d => have.disc[d]).map(d => have.disc[d].file);
   // the English version: Project NEMO's patches, and the English data built
-  // from them (stored in this browser, or prebuilt in the game data)
+  // from them on the first start (then kept in this browser)
   const patches = [];
   if (english) for (const d of [1, 2]) {
     const x = have.patch[d]; if (!x) continue;
@@ -64,9 +57,11 @@ async function startGame(onlineSession) {
   if (english) for (const n of [1, 2]) {
     const c = await idbGet('encache', n);
     if (c) { caches.push({ disc: n, file: new Blob([c.data]) }); log(`using English data for disc ${n} stored in this browser`); }
-    else if (remote && app.gameData.files['en' + n]) { /* prebuilt English data comes with the streamed game data */ }
-    else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); buildingEnglish.push(n); }
+    else { log(`English data for disc ${n} will be built now (first time only, this can take a minute)…`); if (have.disc[n]) buildingEnglish.push(n); }
   }
+  // which English records differ by disc, worked out on the first start and kept (runtime/hle/cd_discs.c)
+  const p = english && have.disc[1] ? await idbGet('encache', 'packs') : null;
+  const packs = p ? new Blob([p.data]) : null;
   // memory card 1: this browser's, or online the host's
   const stored = online && online.card !== undefined ? (online.card ? { data: online.card } : null) : await cardGet(0);
   const cards = stored ? [{ slot: 0, data: stored.data.buffer.slice(0) }] : [];
@@ -76,7 +71,7 @@ async function startGame(onlineSession) {
   worker.onmessage = fromGame;
   worker.onerror = e => { log('worker error: ' + e.message, 'bad'); stop(); };
   worker.postMessage({ type: 'start', ctrl: ctrl.buffer, pad: padSab, ring,
-    discs, patches, caches, english, cards, hd, remote, net: online ? online.net : undefined }, [...(hd ? [hd.port] : []), ...(remote ? [remote.port] : [])]);
+    discs, patches, caches, packs, english, cards, hd, net: online ? online.net : undefined }, hd ? [hd.port] : []);
   $('status').textContent = 'Running. Click the screen area, then use the keyboard or a controller.';
   return true;
 }
@@ -116,22 +111,10 @@ async function startAudio() {
   return ring;
 }
 
-// The rest of the game data is stored in the background while playing, but
-// only from a while after the game is up: during start-up it would compete
-// with the game's own reads (and the browser storage writes hold the data
-// worker up), so the game started much later.
-const FILL_AFTER_MS = 15000;
-let fillTimer = 0;
-function fillLater() {
-  if (fillTimer) return;                             // once per game
-  const w = worker;
-  fillTimer = setTimeout(() => { if (app.running && worker === w) dataWorker.postMessage({ type: 'download' }); }, FILL_AFTER_MS);
-}
-
 // messages from the game worker
 async function fromGame(e) {
   const m = e.data, online = app.online;
-  if (m.type === 'frame') { if (onFrame(m)) { loader.hide('game'); fillLater(); } }
+  if (m.type === 'frame') { if (onFrame(m)) loader.hide('game'); }
   else if (m.type === 'log') log(m.text);
   else if (m.type === 'progress') loaderStage(m.stage, m.disc, m.done, m.total);
   else if (m.type === 'hd-off') hdOff(m.text);
@@ -142,6 +125,7 @@ async function fromGame(e) {
   }
   else if (m.type.startsWith('net-') || m.type === 'coop-phase') { if (online) online.onMessage(m); }
   else if (m.type === 'encache') { await idbPut('encache', m.disc, { data: new Uint8Array(m.data), time: Date.now() }); log(`English data for disc ${m.disc} saved in this browser (${(m.data.byteLength / 1048576).toFixed(1)} MB); later starts skip the build.`, 'ok'); }
+  else if (m.type === 'packs') { await idbPut('encache', 'packs', { data: new Uint8Array(m.data), time: Date.now() }); log('English disc records saved in this browser; later starts skip working them out.', 'ok'); }
   else if (m.type === 'exit') { log(`program exited (${m.code})`); $('status').textContent = 'Stopped.'; stop(); }
 }
 
@@ -205,8 +189,6 @@ function stop() {
     worker = null;
   }
   if (audioCtx) { audioCtx.close(); audioCtx = null; audioNode = null; }
-  clearTimeout(fillTimer); fillTimer = 0;
-  pauseFill();
   app.padView = null; app.running = false; $('stop').disabled = true; loader.cancel();
   document.body.classList.remove('live', 'hd'); $('screen-wrap').classList.remove('wide');
   $('fps').textContent = '–'; $('ro-gfx').textContent = '–'; renderReady();

@@ -23,36 +23,14 @@ let ctrl, pad, pad2 = null, ringHead, ringData, ringFrames;
 let net = null;    // online co-op: NetPlay (web/netplay.js), or null
 // enhanced graphics: port to the render worker and its "fields done" counter
 let hdPort = null, hdDone = null, hdSkip = 0, hdSet = null, hdSetSeen = 0;
-// Disc images come either from the player's own files (File/Blob, read with
-// FileReaderSync) or from the website (RemoteFile, read through
-// data-worker.js). Both are read the same way: reader.readAsArrayBuffer(x.slice(a, b)).
+// The player's own disc images (File/Blob), read with FileReaderSync. The
+// time spent reading goes to the stutter report.
 const fileReader = new FileReaderSync();
-let remote = null;              // { port, ctrl: Int32Array, data: Uint8Array }
-class RemoteFile {
-  constructor(id, name, size) { this.id = id; this.name = name; this.size = size; }
-  slice(a, b) { return { remote: this, a: Math.max(0, a), b: Math.min(this.size, b === undefined ? this.size : b) }; }
-}
-function remoteRead(file, a, b) {
-  const t0 = performance.now();
-  try { return remoteReadWait(file, a, b); } finally { stall.data += performance.now() - t0; }
-}
-function remoteReadWait(file, a, b) {
-  const out = new Uint8Array(Math.max(0, b - a));
-  const MAX = remote.data.length;
-  for (let p = 0; p < out.length;) {
-    const len = Math.min(MAX, out.length - p);
-    Atomics.store(remote.ctrl, 0, 1);
-    remote.port.postMessage({ name: file.id, off: a + p, len });
-    while (Atomics.load(remote.ctrl, 0) === 1) Atomics.wait(remote.ctrl, 0, 1, 30000);
-    if (Atomics.load(remote.ctrl, 0) !== 2) throw new Error('could not download the game data (see the log)');
-    const n = Atomics.load(remote.ctrl, 1);
-    out.set(remote.data.subarray(0, n), p);
-    p += len;
-  }
-  return out.buffer;
-}
 const reader = {
-  readAsArrayBuffer(x) { return x && x.remote ? remoteRead(x.remote, x.a, x.b) : fileReader.readAsArrayBuffer(x); },
+  readAsArrayBuffer(x) {
+    const t0 = performance.now();
+    try { return fileReader.readAsArrayBuffer(x); } finally { stall.data += performance.now() - t0; }
+  },
 };
 
 function log(text) { postMessage({ type: 'log', text }); }
@@ -69,7 +47,7 @@ function fieldDone() {
     stall.logged = now;
     const peer = netMs - stall.net, rest = dt - peer - stall.data - stall.hd;
     log(`stutter: one field took ${Math.round(dt)} ms (waiting for the other player ${Math.round(peer)} ms, ` +
-        `for game data ${Math.round(stall.data)} ms, for the renderer ${Math.round(stall.hd)} ms, other ${Math.round(Math.max(0, rest))} ms)`);
+        `reading the discs ${Math.round(stall.data)} ms, for the renderer ${Math.round(stall.hd)} ms, other ${Math.round(Math.max(0, rest))} ms)`);
   }
   stall.t = now; stall.data = stall.hd = 0; stall.net = netMs;
 }
@@ -203,9 +181,10 @@ function sendRecordings() {
   if (files.length) postMessage({ type: 'recording', files }, files.map(f => f.data.buffer));
 }
 
-// English data built by the game during start-up ("<disc>.en.cache") lands in
-// /game/disc (in memory). Send it to the page once, to keep for the next start.
-let providedCaches = new Set();
+// English data built by the game during start-up ("<disc>.en.cache", and
+// "<disc 1>.en.packs": which records differ by disc) lands in /game/disc (in
+// memory). Send it to the page once, to keep for the next start.
+let providedCaches = new Set(), providedPacks = false;
 function sendNewEnglishCaches() {
   const FS = self.Module.FS;
   for (const n of [1, 2]) {
@@ -214,22 +193,23 @@ function sendNewEnglishCaches() {
     const data = FS.readFile(p);
     postMessage({ type: 'encache', disc: n, data }, [data.buffer]);
   }
+  const p = '/game/disc/' + DISC_NAME(1) + '.en.packs';
+  if (!providedPacks && FS.analyzePath(p).exists) {
+    const data = FS.readFile(p);
+    postMessage({ type: 'packs', data }, [data.buffer]);
+  }
 }
 
 // Read-ahead cache for the disc images: WORKERFS would otherwise do one
-// read per call (the English loader makes ~70,000 small reads). Own files are
-// read in 1 MB blocks. Streamed files (RemoteFile) are read in 64 KB blocks,
-// because at start-up the game looks at a few sectors all over the disc; when
-// reads run on sequentially (movies, music) the read-ahead grows to 1 MB.
-// About 48 MB of the most recent blocks stay in memory.
+// read per call (the English loader makes ~70,000 small reads). Files are
+// read in 1 MB blocks; the 48 most recent blocks stay in memory.
 function installReadCache(WORKERFS) {
-  const BIG = 1 << 20, SMALL = 64 << 10, MAX_BYTES = 48 << 20, blocks = new Map(), ids = new WeakMap(), seq = new Map();
-  let nextId = 1, bytes = 0;
+  const BLOCK = 1 << 20, MAX_BLOCKS = 48, blocks = new Map(), ids = new WeakMap();
+  let nextId = 1;
   WORKERFS.stream_ops.read = function (stream, buffer, offset, length, position) {
     const blob = stream.node.contents, size = stream.node.size;
     if (position >= size) return 0;
     let id = ids.get(blob); if (!id) ids.set(blob, id = nextId++);
-    const BLOCK = blob instanceof RemoteFile ? SMALL : BIG;
     const end = Math.min(size, position + length);
     let p = position;
     while (p < end) {
@@ -237,18 +217,9 @@ function installReadCache(WORKERFS) {
       let b = blocks.get(key);
       if (b) blocks.delete(key);                      // refresh LRU position
       else {
-        // sequential misses on a streamed file: fetch the next 1 MB at once
-        const last = seq.get(id), run = BLOCK === SMALL && last !== undefined && (bi === last + 1 || bi === last) ? BIG / SMALL : 1;
-        const s0 = bi * BLOCK, s1 = Math.min(size, s0 + run * BLOCK);
-        const all = new Uint8Array(reader.readAsArrayBuffer(blob.slice(s0, s1)));
-        for (let k = 0; k * BLOCK < all.length; k++) {
-          const kb = all.subarray(k * BLOCK, Math.min(all.length, (k + 1) * BLOCK)), kk = id + ':' + (bi + k);
-          if (k === 0) { b = kb; continue; }
-          if (!blocks.has(kk)) { blocks.set(kk, kb); bytes += kb.length; }
-        }
-        seq.set(id, bi + run - 1);
-        bytes += b.length;
-        while (bytes > MAX_BYTES) { const k0 = blocks.keys().next().value; bytes -= blocks.get(k0).length; blocks.delete(k0); }
+        const s0 = bi * BLOCK;
+        b = new Uint8Array(reader.readAsArrayBuffer(blob.slice(s0, Math.min(size, s0 + BLOCK))));
+        if (blocks.size >= MAX_BLOCKS) blocks.delete(blocks.keys().next().value);
       }
       blocks.set(key, b);
       const from = p - bi * BLOCK, n = Math.min(end - p, b.length - from);
@@ -295,16 +266,6 @@ self.onmessage = async (e) => {
   ringFrames = ringData.length >> 1;
 
   try {
-    // 0. game data streamed from the website instead of the player's files
-    if (m.remote) {
-      remote = { port: m.remote.port, ctrl: new Int32Array(m.remote.sab, 0, 4), data: new Uint8Array(m.remote.sab, 16) };
-      const f = m.remote.files;
-      m.discs = ['disc1', 'disc2'].filter(n => f[n]).map(n => new RemoteFile(n, n + '.bin', f[n].size));
-      if (f.en1) m.caches = [1, 2].filter(d => f['en' + d]).map(d => ({ disc: d, file: new RemoteFile('en' + d, `en${d}.cache`, f['en' + d].size) }));
-      // which English ACE.BPB records differ by disc, worked out once (runtime/hle/cd_discs.c split_packs)
-      if (f.packs) m.packs = new RemoteFile('packs', 'en.packs', f.packs.size);
-    }
-
     // 1. identify the discs by their volume ID, whatever the files are called
     self.AC3W.progress('check', 0, 0, 1);
     const discs = {};
@@ -346,7 +307,8 @@ self.onmessage = async (e) => {
     const blobs = [];
     for (const n of [1, 2]) if (discs[n]) blobs.push({ name: DISC_NAME(n), data: discs[n] });
     for (const c of m.caches) { blobs.push({ name: DISC_NAME(c.disc) + '.en.cache', data: c.file }); providedCaches.add(c.disc); }
-    if (m.packs && discs[1]) blobs.push({ name: DISC_NAME(1) + '.en.packs', data: m.packs });
+    // which English ACE.BPB records differ by disc, kept from an earlier start (runtime/hle/cd_discs.c split_packs)
+    if (m.packs && discs[1]) { blobs.push({ name: DISC_NAME(1) + '.en.packs', data: m.packs }); providedPacks = true; }
     const patches = m.patches.map(p => ({ name: `[ProjectNEMO] AC3e CD${p.disc} English.xdelta`, data: p.file }));
 
     const args = ['--boot', '--window', '--frames', '0', '--exe', '/game/ACE3.BIN',
@@ -376,7 +338,7 @@ self.onmessage = async (e) => {
         // module object must be taken here, not from the awaited result.
         self.Module = mod;
         const FS = mod.FS;
-        FS.filesystems.WORKERFS.reader = reader;   // own files and streamed ones alike
+        FS.filesystems.WORKERFS.reader = reader;   // (counts the time for the stutter report)
         installReadCache(FS.filesystems.WORKERFS);
         FS.mkdir('/game');
         FS.mkdir('/game/src');            // the user's files, read-only, read in place

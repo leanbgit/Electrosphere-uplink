@@ -31,7 +31,12 @@ enhanced picture is drawn with WebGPU.
 [in game]: https://github.com/leanbgit/Electrosphere-uplink/blob/main/images/ac3ingame.PNG "In game"
 ## Requirements
 
-**To play:** a desktop browser with WebAssembly and SharedArrayBuffer (all
+**To play:** your own copy of the game: both discs of the Japanese release
+(SLPS-02020 and SLPS-02021, "Rev 1") as raw `.bin` images. You select them on
+the page (they can be remembered in the browser); the site provides no game
+data, and the English translation is added for you.
+
+A desktop browser with WebAssembly and SharedArrayBuffer (all
 current ones). Enhanced graphics need **WebGPU**: current Chrome or Edge,
 Safari 26, or Firefox 141 on Windows. Without WebGPU the page falls back to the
 original picture. A keyboard or a game controller is needed.

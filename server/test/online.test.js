@@ -12,7 +12,7 @@ async function player(browser, name) {
   await page.goto(URL);
   await page.waitForFunction(() => self.uplink !== undefined);              // the page's modules are running
   await page.evaluate(n => {
-    uplink.app.gameData = { version: 'test', files: {} }; uplink.app.gameDataState = 'ready';   // stand-in for the streamed game data
+    const disc = { size: 700e6 }; uplink.have.disc[1] = { file: disc, src: 'selected' }; uplink.have.disc[2] = { file: disc, src: 'selected' }; uplink.renderReady();   // stand-in for the player's discs
     window.started = null;
     uplink.game.start = async o => { window.on = o; window.started = { role: o.net.role, names: o.net.names, delay: o.net.delay, card: o.card ? o.card.length : null, gfx: o.gfx, ring: !!o.net.inbound }; return true; };
     document.getElementById('on-name').value = n;
@@ -99,6 +99,25 @@ const waitState = (p, re, ms = 15000) => p.waitForFunction(r => new RegExp(r).te
   await g3.click('#on-refresh');
   await g3.waitForFunction(() => /Abyss/.test(document.getElementById('on-rooms').textContent), null, { timeout: 5000 });
   check(true, 'Refresh: the room is open again and listed');
+
+  // each player brings their own discs: disc 2 on one side only would part the games at the disc change
+  const h4 = await player(browser, 'Cynthia'), g4 = await player(browser, 'Dision');
+  await g4.evaluate(() => { delete uplink.have.disc[2]; uplink.renderReady(); });
+  await h4.click('#on-create');
+  await h4.waitForFunction(() => /^NEMO-/.test(document.getElementById('on-roomcode').textContent));
+  await g4.fill('#on-code', (await h4.evaluate(() => document.getElementById('on-roomcode').textContent)).slice(5));
+  await g4.click('#on-join');
+  await h4.waitForFunction(() => /Dision asks to join/.test(document.getElementById('on-requests').textContent));
+  await h4.click('#on-requests button:has-text("Accept")');
+  await waitState(g4, /no disc 2/);
+  check(/cannot play: no disc 2/.test(await stateOf(h4)), 'a guest without disc 2 is refused when the host has both');
+  // no discs at all: neither creating nor joining a room
+  const p5 = await player(browser, 'Nobody');
+  await p5.evaluate(() => { uplink.have.disc = {}; uplink.renderReady(); });
+  await p5.click('#on-create');
+  await waitState(p5, /Add your game discs first/);
+  b = await playBtn(p5);
+  check(!b.on && /Add your game discs/.test(b.hint), `without discs: no room, and Play waits for them (${b.hint})`);
 
   await browser.close();
   console.log(failed ? `${failed} FAILED` : 'all passed');

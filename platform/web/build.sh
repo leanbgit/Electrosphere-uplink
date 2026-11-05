@@ -92,9 +92,9 @@ if [ "$HD" = 1 ]; then
   cp web/test/bench.html "$OUT/"     # development: speed test on your own GPU (not part of site/)
 fi
 
-cp web/index.html web/style.css web/worker.js web/data-worker.js web/netplay.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
+cp web/index.html web/style.css web/worker.js web/netplay.js web/audio-worklet.js web/serve.py web/coi-boot.js web/coi-sw.js web/_headers "$OUT/"
 cp web/test/coop.html web/test/coop.js web/test/coop.css "$OUT/"         # development: local co-op test page (not part of site/)
-mkdir -p "$OUT/page" && cp web/page/*.js "$OUT/page/"            # the page's modules (index.html)
+rm -rf "$OUT/page" && mkdir -p "$OUT/page" && cp web/page/*.js "$OUT/page/"            # the page's modules (index.html)
 mkdir -p "$OUT/fonts" && cp web/fonts/* "$OUT/fonts/"
 mkdir -p "$OUT/icons" && cp web/icons/* "$OUT/icons/"            # the About links' logos
 # Project NEMO's English patches (included with their permission)
@@ -106,10 +106,9 @@ fi
 # The website = the public build. site/ is what gets uploaded to the host
 # (no serve scripts; includes Project NEMO's patches when web/patches/ has them).
 if [ "$MODE" = public ] && [ "$HD" = 1 ]; then
-  # everything but the game data (site/gamedata/, added by hand: see below)
-  mkdir -p site && find site -mindepth 1 -maxdepth 1 ! -name gamedata -exec rm -rf {} + && mkdir -p site/fonts
+  mkdir -p site && find site -mindepth 1 -maxdepth 1 -exec rm -rf {} + && mkdir -p site/fonts
   cp -r "$OUT/page" site/
-  cp "$OUT"/{index.html,style.css,worker.js,data-worker.js,netplay.js,audio-worklet.js,coi-boot.js,coi-sw.js,_headers,ac3.js,ac3.wasm,render-worker.js,render.js,render.wasm} site/
+  cp "$OUT"/{index.html,style.css,worker.js,netplay.js,audio-worklet.js,coi-boot.js,coi-sw.js,_headers,ac3.js,ac3.wasm,render-worker.js,render.js,render.wasm} site/
   # the website: test hooks off (DEV), so pages cannot pass test-bench options
   sed -i 's/^const DEV = true; /const DEV = false;/' site/worker.js site/render-worker.js
   sed -i 's/^export const DEV = true; /export const DEV = false;/' site/page/common.js
@@ -120,10 +119,11 @@ if [ "$MODE" = public ] && [ "$HD" = 1 ]; then
   # Project NEMO's English patches (permission granted): web/patches/CD1.xdelta, CD2.xdelta
   if [ -f web/patches/CD1.xdelta ]; then mkdir -p site/patches && cp web/patches/CD?.xdelta site/patches/;
   else echo "note: web/patches/ is empty; add CD1.xdelta and CD2.xdelta to site/patches/ before uploading"; fi
-  # The game data (site/gamedata/, written by tools/make_gamedata.py from your
-  # discs) is not part of the build: it is added to site/ for the web host only
-  # and never committed. Without it the page cannot start the game.
-  (cd site && find . -type f ! -name SHA256SUMS ! -path './gamedata/*' | sed 's|^\./||' | sort | xargs sha256sum > SHA256SUMS)
+  # No game data: each player brings their own discs (web/page/discs.js).
+  if [ -n "$(find site -iname '*.bin' -o -iname '*.en.cache' -o -iname '*.en.packs' | head -1)" ]; then
+    echo "ERROR: game data found in site/"; exit 1
+  fi
+  (cd site && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort | xargs sha256sum > SHA256SUMS)
   echo "site/ ready: $(du -sh site | cut -f1)"
 fi
 ls -la "$OUT"

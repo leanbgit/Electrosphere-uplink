@@ -5,10 +5,9 @@
 <title>Co-op Test</title>
 <!-- Development tool (co-op Phase 2), not part of the site. One game, two
      players on one PC: player 1 is the host, player 2 the co-op guest on
-     controller port 2. Both views side by side. It streams the game data like
-     the main page and uses the memory card the main page saved in this
-     browser, so open it from the same address as the game
-     (e.g. http://localhost:8080/coop.html).
+     controller port 2. Both views side by side. It uses the discs, English data
+     and memory card the main page remembered in this browser, so open it from
+     the same address as the game (e.g. http://localhost:8080/coop.html).
      The memory card is only read: nothing this page does is saved to it. -->
 <link rel="stylesheet" href="coop.css">
 <main>
@@ -24,7 +23,7 @@
       <label><input type="checkbox" id="record"> Record this session (both controllers)</label>
       <button id="start" disabled>Start</button>
       <button id="stop" class="sec" disabled>Stop</button>
-      <span id="status" class="dim">Checking for the game data…</span>
+      <span id="status" class="dim">Checking for remembered discs…</span>
     </div>
   </section>
 

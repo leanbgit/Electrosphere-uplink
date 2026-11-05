@@ -1,7 +1,7 @@
 # S6: playing online
 
-Two players, each on their own computer, both playing the game data the site
-streams (`web/data-worker.js`). The host
+Two players, each on their own computer, each playing from their own discs
+(the Japanese Rev 1 release, checked by the page: `web/page/discs.js`). The host
 creates a room and shares its code, or makes it public. The guest joins, and
 both games start together from power-on with the host's memory card and the
 host's graphics settings. From then on only the two controllers travel
@@ -47,11 +47,12 @@ Checked on Cloudflare's local runtime (`wrangler dev`):
    browsers connect directly (WebRTC data channel, reliable and ordered). The
    STUN servers are Cloudflare's and Google's. There is no relay yet: if no
    direct path exists, the page says so after 20 s.
-2. **Hello** (text messages): each side sends its site version, the version
-   of the streamed game data (`gamedata/manifest.json`), the language, and
-   whether it has WebGPU. The host refuses a guest with a different site
-   version, different game data or a different language. (Players can no
-   longer use their own disc files, so both run exactly the same data.)
+2. **Hello** (text messages): each side sends its site version, whether it
+   has disc 2, the language, and whether it has WebGPU. The host refuses a
+   guest with a different site version, a different language, or disc 2 on
+   one side only (the game would part at the disc change). Both players'
+   discs passed the same check (Rev 1, the executable's SHA-256), so both
+   run the same game.
    The guest repeats its hello every 1.5 s until the host answers: the first
    message on a new channel is sometimes never delivered. The host answers a
    repeat by sending its set-up again, at most 10 times.
@@ -93,7 +94,7 @@ drives two players on the real page in headless Chromium against `wrangler dev`:
 - game records go both ways;
 - the goodbye reaches the other game.
 
-The game itself can't start there (no game data), so the page's start function is
+The game itself can't start there (no discs), so the page's start function is
 replaced by a stand-in.
 
 ## Who has the controls (on the game screen)

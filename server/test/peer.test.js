@@ -19,7 +19,7 @@ async function player(browser, name) {
   await page.goto(URL);
   await page.waitForFunction(() => self.uplink !== undefined);
   await page.evaluate(n => {
-    uplink.app.gameData = { version: 'test', files: {} }; uplink.app.gameDataState = 'ready';
+    const disc = { size: 700e6 }; uplink.have.disc[1] = { file: disc, src: 'selected' }; uplink.have.disc[2] = { file: disc, src: 'selected' }; uplink.renderReady();   // stand-in for the player's discs
     window.started = null;
     uplink.game.start = async o => { window.on = o; window.started = { role: o.net.role, delay: o.net.delay, card: o.card ? [o.card.length, o.card[2]] : null, gfx: o.gfx }; return true; };
     document.getElementById('on-name').value = n;

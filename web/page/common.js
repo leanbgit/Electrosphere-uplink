@@ -19,8 +19,6 @@ export const app = {
   running: false,            // a game is running (game.js)
   online: null,              // the online co-op session of the running game, or null (game.js, online.js)
   lobby: null,               // in an online room: { canStart, hint, go } (online.js); Play becomes Play Online
-  gameData: null,            // the streamed game data's manifest, once loaded (gamedata.js)
-  gameDataState: 'loading',  // 'loading', 'ready' or 'none'
   padView: null,             // the controller, shared with the game worker (written by input.js)
   renderWorker: null,        // the enhanced renderer's worker, or null (game.js)
   hdSet: null,               // live graphics settings shared with the game: [0] bits, [1] version

@@ -44,8 +44,8 @@ playwright`):
   second, connections per address, people waiting, other sites refused,
   names cleaned.
 - `node test/online.test.js` drives two players on the real page in headless
-  Chromium: room, direct connection, checks, memory card, start, game data
-  both ways, goodbye.
+  Chromium: room, direct connection, checks, memory card, start, game
+  records both ways, goodbye.
 - `node test/peer.test.js` plays a modified guest and modified hosts on the
   real page: what each side refuses from the other.
 

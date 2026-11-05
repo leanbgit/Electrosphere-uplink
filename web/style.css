@@ -198,6 +198,11 @@ label.check input { margin-top: 4px; accent-color: var(--ok); }
 .files li { padding: 4px 0 4px 18px; position: relative; }
 .files li::before { content: ''; position: absolute; left: 2px; top: 11px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-soft); }
 .files li.dim { color: var(--ink-soft); }
+.files li.ok::before { background: var(--ok); border-color: var(--ok); }
+#drop { border: 2px dashed var(--rule); border-radius: 8px; padding: 14px; margin-top: 8px; text-align: center; color: var(--ink-soft); font-size: 15px; }
+#drop.over { border-color: var(--burn); color: var(--ink); }
+#drop label.pickbtn { color: var(--ink); text-decoration: underline; cursor: pointer; }
+#drop input[type=file] { display: none; }
 .files li button { margin-left: 8px; }
 .on-code { font: 600 30px/1.2 var(--font-cond); letter-spacing: .06em; margin: 8px 0 0; }
 

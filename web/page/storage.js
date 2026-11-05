@@ -1,6 +1,5 @@
 // storage.js -- what the page keeps in this browser: IndexedDB (memory cards,
-// English data) and the origin private file system (disc images remembered by
-// older versions of the page).
+// English data) and the origin private file system (the remembered discs).
 const DB = 'ac3online', STORE = 'cards';   // storage name from the project's first name; kept so saves and English data survive
 
 function db() {

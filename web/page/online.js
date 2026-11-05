@@ -14,7 +14,7 @@
 //    controller 2; the guest's game never saves to the guest's browser.
 import { log, app } from './common.js';
 import { cardGet } from './storage.js';
-import { have, renderReady } from './gamedata.js';
+import { have, renderReady, discsReady } from './discs.js';
 import { gfxBits } from './graphics.js';
 import { game } from './game.js';
 // NetRing (web/netplay.js, a plain script shared with the game worker) is a global.
@@ -74,9 +74,9 @@ function lobbyHint() {
   if (!S.peer || !S.pc) return 'Waiting for another player to join your room…';   // (no connection: none yet, or they left)
   return S.ready ? `${S.peer} is ready.` : `Connecting to ${S.peer}…`;
 }
-function needDiscs() {          // the game data, streamed from the site (gamedata.js)
-  if (app.gameData) return false;
-  state(app.gameDataState === 'loading' ? 'The game data is still loading: try again in a moment.' : 'The game data is not available on this site.', 'bad');
+function needDiscs() {          // each player plays from their own discs (discs.js)
+  if (discsReady()) return false;
+  state('Add your game discs first (Settings, Game discs): each player needs their own copy.', 'bad');
   return true;
 }
 
@@ -241,7 +241,7 @@ function channel(dc) {
   dc.onopen = async () => {
     clearTimeout(S.timer);
     state(`Connected to ${S.peer}. Checking that you can play together…`);
-    const hello = { t: 'hello', version: await version(), data: app.gameData ? app.gameData.version : null,
+    const hello = { t: 'hello', version: await version(), disc2: !!have.disc[2],
                     english: !!have.patch[1], gpu: !!navigator.gpu };
     send(hello);
     // The first message on a new channel is sometimes never delivered (seen in
@@ -285,7 +285,7 @@ async function control(m) {
     }
     S.hello = m;
     const problem = m.version !== await version() ? 'a different version of the site'
-      : m.data !== (app.gameData && app.gameData.version) ? 'different game data'
+      : m.disc2 !== !!have.disc[2] ? (have.disc[2] ? 'no disc 2 selected (the host has both discs)' : 'disc 2, but the host has only disc 1')
       : m.english !== !!have.patch[1] ? 'a different language' : '';
     if (problem) { S.refusal = { t: 'refuse', why: `Your copy has ${problem}.` }; send(S.refusal); state(`${S.peer} cannot play: ${problem}.`, 'bad'); break; }
     const card = await cardGet(0);
