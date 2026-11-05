@@ -92,6 +92,7 @@ static int commit(ctx_t *ctx) {
         return 1;
     }
     ac3_coop_guest_plane = MEM_R16S(SCENE + SCENE_PLANE);   /* the guest's choice */
+    coop_hangar_host_plane = (s16)(H.host_plane[0] | H.host_plane[1] << 8);
     for (u32 i = 0; i < SCENE_WEAPONS_LEN; i++) ac3_coop_guest_weapons[i] = (u8)MEM_R8U(SCENE + SCENE_WEAPONS + i);
     copy_in(SCENE + SCENE_PLANE, H.host_plane, 2);
     copy_in(SCENE + SCENE_WEAPONS, H.host_weapons, SCENE_WEAPONS_LEN);

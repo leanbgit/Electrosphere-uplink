@@ -25,6 +25,22 @@ const coop_range_t coop_per_player[N_PER_PLAYER] = {
  * --coop-guest-weapons G,M,S). */
 u8  ac3_coop_guest_weapons[3];
 int ac3_coop_guest_plane = -1;
+int coop_hangar_host_plane = -1;   /* the host's plane in the last hangar (coop_hangar.c); -1 none */
+
+/* A mission can put the player in a plane of its own: in Geopelia, the
+ * player takes over one of the Geopelias after shooting one down (the game
+ * ends the flight and starts it again in plane 25, with its own weapons).
+ * The host's plane is then no longer its hangar choice, and the guest gets
+ * the same plane and weapons. Returns that plane, or -1 when the planes are
+ * the hangar's. */
+int coop_mission_plane(void) {
+    int now = MEM_R16S(SCENE + SCENE_PLANE);
+    return coop_hangar_host_plane >= 0 && now != coop_hangar_host_plane ? now : -1;
+}
+/* the plane the guest flies: its hangar choice, or -1 for the host's */
+int coop_guest_plane(void) {
+    return coop_mission_plane() >= 0 ? -1 : ac3_coop_guest_plane;
+}
 
 /* What mission start does with the hangar's choice (FN_PLAYER_SETUP,
  * 0x8006CF90..0x8006D034), done again for the guest, which starts as a copy
@@ -34,6 +50,11 @@ int ac3_coop_guest_plane = -1;
  * the flight state, which the copy already has. The plane's model, textures
  * and sounds stay the host's (step C, docs/coop/S4_plane_choice.md). */
 static void guest_loadout(ctx_t *ctx, u32 mine) {
+    if (coop_mission_plane() >= 0) {                 /* the mission's plane: the guest stays a copy of the host's */
+        printf("coop: the mission's plane %d for both players, weapons %u,%u,%u\n", coop_mission_plane(),
+               MEM_R8U(SCENE + SCENE_WEAPONS), MEM_R8U(SCENE + SCENE_WEAPONS + 1), MEM_R8U(SCENE + SCENE_WEAPONS + 2));
+        return;
+    }
     int plane = ac3_coop_guest_plane >= 0 && ac3_coop_guest_plane <= 36;
     int weapons = ac3_coop_guest_weapons[0] || ac3_coop_guest_weapons[1] || ac3_coop_guest_weapons[2];
     if (!plane && !weapons) return;

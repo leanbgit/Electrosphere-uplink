@@ -73,7 +73,7 @@ static int plane_load(ctx_t *ctx) {
     ac3_interpret(ctx, FN_PLANE_LOAD);
     M.queued = M.ready = M.built = 0;
     M.n = 0;
-    int plane = ac3_coop_guest_plane;
+    int plane = coop_guest_plane();
     if (plane < 0 || plane > 36 || plane == MEM_R16S(SCENE + SCENE_PLANE)) return 1;   /* the host's model will do */
     ac3_ext_enable();
     ctx_t after = *ctx;
@@ -107,7 +107,7 @@ void coop_plane_guest_created(ctx_t *ctx) {
         /* "Restart mission" loads nothing again: the host's model and the
          * guest's (already taken apart, its pictures in the second bank) are
          * both still there. */
-        if (M.built && M.plane == ac3_coop_guest_plane && ram_ptr(model) && MEM_R32(model + MODEL_PARTS) == M.host_parts) {
+        if (M.built && M.plane == coop_guest_plane() && ram_ptr(model) && MEM_R32(model + MODEL_PARTS) == M.host_parts) {
             coop_sound_guest_bank(M.sounds);
             M.ready = 1;
             printf("coop: guest's plane %d still loaded: used again\n", M.plane);

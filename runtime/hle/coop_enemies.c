@@ -37,22 +37,37 @@ static void exchange_players(u32 slots, u32 recs) {
  * a target near either player counts as near: the other player's records are
  * in G.hud_rec (the guest's in the game's own pass, the host's during the
  * guest's replay), so their bit is added and taken off again afterwards. */
-static int activate_for_both(ctx_t *ctx, u32 fn) {
+/* run fn with a target-record flag counted for either player: the other
+ * player's bit is added to slots lo..hi-1 for the call and taken off again */
+static int flag_for_both(ctx_t *ctx, u32 fn, u32 flag, u32 lo, u32 hi) {
     if (!G.live || !G.hud_valid) return 0;
-    int air = fn == FN_ACTIVATE_AIRCRAFT;
-    u32 added[N_SLOTS] = {0}, lo = air ? SLOT_FIRST_AIRCRAFT : SLOT_FIRST_GROUND, hi = air ? SLOT_FIRST_GROUND : N_SLOTS;
+    u8 added[N_SLOTS] = {0};
     for (u32 t = lo; t < hi; t++) {
         u32 r = MEM_R32(HUD_RECS + 4u * t);
         if (!ram_ptr(r)) continue;
         const u8 *o = G.hud_rec[t] + HREC_FLAGS;
         u32 other = (u32)o[0] | (u32)o[1] << 8 | (u32)o[2] << 16 | (u32)o[3] << 24;
         u32 mine = MEM_R32(r + HREC_FLAGS);
-        if ((other & HREC_NEAR) && !(mine & HREC_NEAR)) { MEM_W32(r + HREC_FLAGS, mine | HREC_NEAR); added[t] = 1; }
+        if ((other & flag) && !(mine & flag)) { MEM_W32(r + HREC_FLAGS, mine | flag); added[t] = 1; }
     }
     ac3_interpret(ctx, fn);
     for (u32 t = lo; t < hi; t++)
-        if (added[t]) { u32 r = MEM_R32(HUD_RECS + 4u * t); MEM_W32(r + HREC_FLAGS, MEM_R32(r + HREC_FLAGS) & ~HREC_NEAR); }
+        if (added[t]) { u32 r = MEM_R32(HUD_RECS + 4u * t); MEM_W32(r + HREC_FLAGS, MEM_R32(r + HREC_FLAGS) & ~flag); }
     return 1;
+}
+static int activate_for_both(ctx_t *ctx, u32 fn) {
+    int air = fn == FN_ACTIVATE_AIRCRAFT;
+    return flag_for_both(ctx, fn, HREC_NEAR, air ? SLOT_FIRST_AIRCRAFT : SLOT_FIRST_GROUND, air ? SLOT_FIRST_GROUND : N_SLOTS);
+}
+
+/* ---- formations ----------------------------------------------------------------
+ * Enemies that fly in formation (the Geopelias, for one) keep it until a
+ * member is hit or the player comes close to the leader with it ahead
+ * (HREC_CLOSE_AHEAD on the leader's target record, worked out from slot 0
+ * only): FN_FORMATIONS breaks the group up then. The guest coming close
+ * counts too. */
+static int formations_for_both(ctx_t *ctx) {
+    return flag_for_both(ctx, FN_FORMATIONS, HREC_CLOSE_AHEAD, SLOT_FIRST_AIRCRAFT, N_SLOTS);
 }
 
 /* ---- switching targets --------------------------------------------------------
@@ -267,6 +282,7 @@ int coop_enemies_hook(ctx_t *ctx, u32 target) {
     case FN_DAMAGE_PASS:     return damage_as_player(ctx);
     case FN_ACTIVATE_AIRCRAFT:
     case FN_ACTIVATE_GROUND: return activate_for_both(ctx, target);
+    case FN_FORMATIONS:      return formations_for_both(ctx);
     case FN_AI_PRE:
     case FN_AI_DECIDE:
     case FN_AI_MOVE:

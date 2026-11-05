@@ -31,6 +31,9 @@
 #include <stdlib.h>
 
 void coop_name_place(int view, s32 right, s32 top);   /* coop_name.c: the other player's box in this view */
+extern int coop_hangar_host_plane;                    /* coop_guest.c: the host's plane in the last hangar */
+int coop_mission_plane(void);                         /*   a plane the mission put the host in, or -1 */
+int coop_guest_plane(void);                           /*   the guest's plane, -1 = the host's */
 
 extern void ac3_interpret(ctx_t *ctx, u32 entry);
 extern void ac3_interpret_until(ctx_t *ctx, u32 pc, u32 stop);

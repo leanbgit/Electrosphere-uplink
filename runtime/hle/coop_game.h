@@ -35,6 +35,8 @@
 /* enemies */
 #define FN_ACTIVATE_AIRCRAFT 0x80038100u   /* sets "active" on aircraft (slots 2..31) near the player */
 #define FN_ACTIVATE_GROUND   0x80051498u   /* the same for ground and ship objects (slots 0x20..0x3F) */
+#define FN_FORMATIONS        0x8004BA0Cu   /* formations (groups at gp+0x378/0x380): one breaks up when its
+                                             leader's target record has HREC_CLOSE_AHEAD, or a member is hit */
 #define FN_AI_FIRST          0x80046600u   /* the AI's first pass; 0x8003809C clears the lock-on alert before it */
 #define FN_AI_PRE            0x80046854u   /* aircraft AI loops, slots 2..31, in this order: */
 #define FN_AI_DECIDE         0x800469ECu   /*   decisions (target choice 0x80046124) */
@@ -250,6 +252,7 @@ static inline int mode_intro(u32 m)       { return m == 2u || m == 0x02000000u; 
 #define HREC_SIZE        0x34u
 #define HREC_FLAGS       0x0Cu   /* HREC_NEAR: near the player (distance under about 34,000) */
 #define   HREC_NEAR      0x80u
+#define   HREC_CLOSE_AHEAD 0x20u  /* close (under the scene's distance, scene+0x28) and in front of the player (0x80045278) */
 #define   HREC_FULL_BOX  0x100u    /* FN_DRAW_BOX: a whole box (allies) rather than four corners */
 #define HREC_KIND        0x03u   /* byte: the object's kind (ENT_KIND), set up with the object; +2 its class (1 aircraft, 2 ground) */
 #define HREC_SHOWN       0x00u   /* byte: 0 not on screen; 1 shown (green, or the FRND colour) */
